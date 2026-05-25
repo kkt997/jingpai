@@ -1,0 +1,11 @@
+{
+  "name": "jingpai-frontend",
+  "private": true,
+  "scripts": {
+    "dev:mobile": "pnpm --filter @jingpai/mobile dev",
+    "dev:merchant": "pnpm --filter @jingpai/merchant dev",
+    "build:mobile": "pnpm --filter @jingpai/mobile build",
+    "build:merchant": "pnpm --filter @jingpai/merchant build",
+    "dev": "pnpm run dev:mobile & pnpm run dev:merchant"
+  }
+}

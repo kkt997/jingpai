@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+frontend/packages/*/node_modules/
+
+# Build outputs
+frontend/packages/*/dist/
+backend/bin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Go
+backend/tmp/
+
+# Docker volumes
+mysql_data/
+redis_data/

@@ -1,0 +1,34 @@
+server:
+  port: 8080
+  mode: debug  # debug / release
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: jingpai123
+  dbname: jingpai
+  max_open_conns: 100
+  max_idle_conns: 20
+
+redis:
+  addr: 127.0.0.1:6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+jwt:
+  secret: jingpai-secret-key-change-in-production
+  expire_hours: 72
+
+auction:
+  default_extend_seconds: 20
+  min_extend_seconds: 5
+  max_extend_count: 10
+  decay_per_extend: 5
+
+websocket:
+  max_connections_per_user: 3
+  heartbeat_interval: 15
+  heartbeat_timeout: 45
+  countdown_sync_interval: 5
