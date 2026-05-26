@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"jingpai/internal/metrics"
 )
 
 type Hub struct {
@@ -43,6 +45,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
+			metrics.WsConnectionsActive.Inc()
 			zap.L().Info("client connected", zap.Uint("userId", client.UserID))
 
 		case client := <-h.Unregister:
@@ -50,6 +53,7 @@ func (h *Hub) Run() {
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				client.Close()
+				metrics.WsConnectionsActive.Dec()
 
 				if client.RoomID > 0 {
 					if room, ok := h.rooms[client.RoomID]; ok {
@@ -97,6 +101,8 @@ func (h *Hub) CountUserTotal(userID uint) int {
 }
 
 func (h *Hub) HandleMessage(client *Client, msg *ClientMessage) {
+	metrics.WsMessagesTotal.WithLabelValues(msg.Type, "inbound").Inc()
+
 	switch msg.Type {
 	case MsgPing:
 		client.SendMessage(ServerMessage{

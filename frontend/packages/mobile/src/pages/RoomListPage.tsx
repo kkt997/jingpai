@@ -13,7 +13,7 @@ export default function RoomListPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-950 pb-20">
+    <>
       <header className="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800 px-4 py-3">
         <h1 className="text-lg font-bold">直播竞拍</h1>
       </header>
@@ -49,25 +49,6 @@ export default function RoomListPage() {
           </div>
         ))}
       </div>
-
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-[480px] mx-auto bg-gray-900 border-t border-gray-800 flex">
-        <button className="flex-1 py-3 text-center text-orange-400 text-sm font-medium">
-          首页
-        </button>
-        <button
-          onClick={() => navigate('/my-bids')}
-          className="flex-1 py-3 text-center text-gray-500 text-sm"
-        >
-          我的竞拍
-        </button>
-        <button
-          onClick={() => navigate('/orders')}
-          className="flex-1 py-3 text-center text-gray-500 text-sm"
-        >
-          我的订单
-        </button>
-      </nav>
-    </div>
+    </>
   );
 }

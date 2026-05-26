@@ -83,6 +83,25 @@ export default function ProductsPage() {
     }
   };
 
+  const handleList = async (id: number) => {
+    try {
+      await productApi.listProduct(id);
+      fetchProducts();
+    } catch (err: any) {
+      alert(err?.msg || '上架失败');
+    }
+  };
+
+  const handleUnlist = async (id: number) => {
+    if (!confirm('确定下架该商品？')) return;
+    try {
+      await productApi.unlistProduct(id);
+      fetchProducts();
+    } catch (err: any) {
+      alert(err?.msg || '下架失败');
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -179,8 +198,19 @@ export default function ProductsPage() {
                     <span className={`px-2 py-1 rounded-full text-xs ${s.color}`}>{s.label}</span>
                   </td>
                   <td className="px-6 py-4 space-x-3">
-                    <button onClick={() => openEdit(p)} className="text-blue-600 text-sm hover:underline">编辑</button>
-                    <button onClick={() => handleDelete(p.id)} className="text-red-500 text-sm hover:underline">删除</button>
+                    {(p as any).status === 'DRAFT' && (
+                      <>
+                        <button onClick={() => handleList(p.id)} className="text-green-600 text-sm hover:underline">上架</button>
+                        <button onClick={() => openEdit(p)} className="text-blue-600 text-sm hover:underline">编辑</button>
+                        <button onClick={() => handleDelete(p.id)} className="text-red-500 text-sm hover:underline">删除</button>
+                      </>
+                    )}
+                    {(p as any).status === 'LISTED' && (
+                      <button onClick={() => handleUnlist(p.id)} className="text-orange-500 text-sm hover:underline">下架</button>
+                    )}
+                    {(p as any).status === 'SOLD' && (
+                      <span className="text-gray-400 text-sm">已售出</span>
+                    )}
                   </td>
                 </tr>
               );

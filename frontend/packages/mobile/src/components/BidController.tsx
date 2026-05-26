@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { WsClient } from '@jingpai/shared';
+import { WsClient, depositApi } from '@jingpai/shared';
 import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
 
@@ -13,10 +13,15 @@ export default function BidController({ ws }: Props) {
   const ceiling = useAuctionStore((s) => s.auction?.ceilingPrice);
   const auctionId = useAuctionStore((s) => s.auction?.id);
   const mode = useAuctionStore((s) => s.mode);
+  const depositRequired = useAuctionStore((s) => s.depositRequired);
+  const depositAmount = useAuctionStore((s) => s.depositAmount);
+  const hasDeposit = useAuctionStore((s) => s.hasDeposit);
+  const setDepositPaid = useAuctionStore((s) => s.setDepositPaid);
   const { placeBid, bidPending, lastBidResult } = useBidStore();
 
   const minBid = currentPrice + increment;
   const [amount, setAmount] = useState(minBid);
+  const [depositLoading, setDepositLoading] = useState(false);
 
   useEffect(() => {
     setAmount(minBid);
@@ -26,6 +31,41 @@ export default function BidController({ ws }: Props) {
     if (!auctionId || bidPending) return;
     placeBid(ws, auctionId, amount);
   };
+
+  const handlePayDeposit = async () => {
+    if (!auctionId || depositLoading) return;
+    setDepositLoading(true);
+    try {
+      await depositApi.pay(auctionId);
+      setDepositPaid();
+    } catch (err: any) {
+      alert(err?.msg || '缴纳保证金失败');
+    } finally {
+      setDepositLoading(false);
+    }
+  };
+
+  if (depositRequired && !hasDeposit) {
+    return (
+      <div className="sticky bottom-0 bg-gray-900 border-t border-gray-800 px-4 py-4 space-y-3">
+        <div className="text-center space-y-2">
+          <div className="text-amber-400 text-sm font-medium">
+            本场竞拍需缴纳保证金方可出价
+          </div>
+          <div className="text-gray-400 text-xs">
+            保证金 ¥{depositAmount.toLocaleString()} · 未中标自动退还 · 中标抵扣货款
+          </div>
+        </div>
+        <button
+          onClick={handlePayDeposit}
+          disabled={depositLoading}
+          className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 active:scale-[0.98] disabled:opacity-50 transition"
+        >
+          {depositLoading ? '处理中...' : `缴纳保证金 ¥${depositAmount.toLocaleString()}`}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="sticky bottom-0 bg-gray-900 border-t border-gray-800 px-4 py-3 space-y-3">
@@ -67,6 +107,9 @@ export default function BidController({ ws }: Props) {
         ))}
       </div>
 
+      {depositRequired && hasDeposit && (
+        <p className="text-xs text-green-500/70 text-center">保证金已缴纳 ¥{depositAmount.toLocaleString()}</p>
+      )}
       {mode === 'BLIND' ? (
         <p className="text-xs text-gray-600 text-center">盲拍模式 · 出价金额仅自己可见</p>
       ) : (

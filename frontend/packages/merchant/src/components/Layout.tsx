@@ -5,6 +5,7 @@ const navItems = [
   { path: '/products', label: '商品管理', icon: '📦' },
   { path: '/auctions', label: '竞拍管理', icon: '🔨' },
   { path: '/rooms', label: '直播间', icon: '📺' },
+  { path: '/live-panel', label: '实时面板', icon: '📡' },
   { path: '/orders', label: '订单管理', icon: '🧾' },
 ];
 

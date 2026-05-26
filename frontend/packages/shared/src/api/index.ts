@@ -26,9 +26,9 @@ api.interceptors.response.use(
 
 // Auth
 export const authApi = {
-  register: (data: { phone: string; nickname: string; password: string; role: string }) =>
+  register: (data: { phone?: string; email?: string; nickname: string; password: string; role: string }) =>
     api.post('/auth/register', data),
-  login: (data: { phone: string; password: string }) =>
+  login: (data: { account: string; password: string }) =>
     api.post('/auth/login', data),
   getProfile: () => api.get('/user/profile'),
 };
@@ -55,6 +55,8 @@ export const productApi = {
   list: () => api.get('/merchant/products'),
   update: (id: number, data: Record<string, unknown>) => api.put(`/merchant/products/${id}`, data),
   delete: (id: number) => api.delete(`/merchant/products/${id}`),
+  listProduct: (id: number) => api.put(`/merchant/products/${id}/list`),
+  unlistProduct: (id: number) => api.put(`/merchant/products/${id}/unlist`),
 };
 
 // Merchant stats
@@ -70,6 +72,13 @@ export const auctionApi = {
   update: (id: number, data: Record<string, unknown>) => api.put(`/merchant/auctions/${id}`, data),
   start: (id: number) => api.put(`/merchant/auctions/${id}/start`),
   cancel: (id: number, reason?: string) => api.put(`/merchant/auctions/${id}/cancel`, { reason }),
+};
+
+// Deposits
+export const depositApi = {
+  pay: (auctionId: number) => api.post(`/auctions/${auctionId}/deposit`),
+  status: (auctionId: number) => api.get(`/auctions/${auctionId}/deposit`),
+  list: () => api.get('/user/deposits'),
 };
 
 // Orders

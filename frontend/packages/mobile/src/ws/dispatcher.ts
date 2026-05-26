@@ -41,6 +41,7 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
   unsubscribers.push(
     ws.on(MSG_ROOM_STATE, (msg) => {
       const data = msg.data as any;
+      room().setRoomInfo({ title: data.roomTitle, streamUrl: data.streamUrl });
       auction().initFromRoomState(data);
       if (data?.auction?.ranking) {
         bidStore().onRankingUpdate(data.auction);

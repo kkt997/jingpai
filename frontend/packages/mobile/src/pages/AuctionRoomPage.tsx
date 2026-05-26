@@ -6,6 +6,7 @@ import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
 import { useRoomStore } from '../stores/roomStore';
 import { createWsDispatcher } from '../ws/dispatcher';
+import LiveStreamPlayer from '../components/LiveStreamPlayer';
 import CountdownTimer from '../components/CountdownTimer';
 import RankingList from '../components/RankingList';
 import BidController from '../components/BidController';
@@ -45,22 +46,13 @@ export default function AuctionRoomPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      {/* Video area */}
-      <div className="relative h-52 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-        <span className="text-6xl opacity-30">🎬</span>
-        <div className="absolute top-3 left-3 bg-black/50 px-3 py-1 rounded-full text-xs flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          直播间 #{roomId}
-        </div>
-        <div className="absolute top-3 right-3 bg-black/50 px-3 py-1 rounded-full text-xs">
-          👁 {room.onlineCount} 人观看
-        </div>
-        {room.connectionStatus !== 'connected' && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-yellow-500/80 px-3 py-1 rounded-full text-xs text-black font-medium">
-            {room.connectionStatus === 'reconnecting' ? '重连中...' : '连接断开'}
-          </div>
-        )}
-      </div>
+      {/* Live stream */}
+      <LiveStreamPlayer
+        streamUrl={room.streamUrl}
+        roomTitle={`直播间 #${roomId}`}
+        onlineCount={room.onlineCount}
+        connectionStatus={room.connectionStatus}
+      />
 
       {/* Auction info */}
       <div className="px-4 py-3 border-b border-gray-800">

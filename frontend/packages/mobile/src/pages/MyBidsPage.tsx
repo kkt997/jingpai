@@ -46,9 +46,8 @@ export default function MyBidsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => navigate('/')} className="text-gray-400 text-lg">&larr;</button>
+    <>
+      <header className="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-lg border-b border-gray-800 px-4 py-3">
         <h1 className="text-lg font-bold">我的竞拍</h1>
       </header>
 
@@ -111,6 +110,6 @@ export default function MyBidsPage() {
           })}
         </div>
       )}
-    </div>
+    </>
   );
 }

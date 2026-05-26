@@ -26,6 +26,7 @@ auction:
   min_extend_seconds: 5
   max_extend_count: 10
   decay_per_extend: 5
+  default_deposit_amount: 500
 
 websocket:
   max_connections_per_user: 3

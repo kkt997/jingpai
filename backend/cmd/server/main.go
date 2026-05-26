@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
@@ -19,6 +20,8 @@ import (
 
 	"jingpai/internal/config"
 	"jingpai/internal/handler"
+	"jingpai/internal/metrics"
+	"jingpai/internal/middleware"
 	"jingpai/internal/model"
 	"jingpai/internal/service"
 	"jingpai/internal/ws"
@@ -59,6 +62,7 @@ func main() {
 		&model.Auction{},
 		&model.Bid{},
 		&model.Order{},
+		&model.Deposit{},
 	); err != nil {
 		zap.L().Fatal("failed to migrate database", zap.Error(err))
 	}
@@ -71,6 +75,7 @@ func main() {
 		DB:       cfg.Redis.DB,
 		PoolSize: cfg.Redis.PoolSize,
 	})
+	rdb.AddHook(metrics.NewRedisHook())
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		zap.L().Fatal("failed to connect redis", zap.Error(err))
 	}
@@ -86,12 +91,13 @@ func main() {
 	bidService := service.NewBidService(rdb, db, aliasService, &cfg.Auction)
 	orderService := service.NewOrderService(db, rdb)
 	orderService.Start()
+	depositService := service.NewDepositService(db, rdb)
 	auctionFSM := service.NewAuctionFSM()
-	auctionTimer := service.NewAuctionTimer(hub, db, bidService, broadcastService, aliasService, orderService, auctionFSM, &cfg.Auction)
+	auctionTimer := service.NewAuctionTimer(hub, db, bidService, broadcastService, aliasService, orderService, depositService, auctionFSM, &cfg.Auction)
 	auctionTimer.Start()
 
 	// Wire WS message handler
-	wsHandler := handler.NewWsMessageHandler(hub, db, bidService, broadcastService, aliasService, auctionTimer)
+	wsHandler := handler.NewWsMessageHandler(hub, db, bidService, broadcastService, aliasService, depositService, auctionTimer)
 	hub.SetMessageHandler(wsHandler)
 
 	// Setup Gin
@@ -100,8 +106,12 @@ func main() {
 	}
 	r := gin.Default()
 
+	// Prometheus metrics middleware + endpoint
+	r.Use(middleware.PrometheusMiddleware())
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
 	// Register routes
-	h := handler.NewHandler(db, rdb, hub, bidService, orderService, auctionTimer, auctionFSM)
+	h := handler.NewHandler(db, rdb, hub, bidService, orderService, depositService, auctionTimer, auctionFSM)
 	h.RegisterRoutes(r)
 
 	// Start server

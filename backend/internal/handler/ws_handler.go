@@ -21,6 +21,7 @@ type WsMessageHandler struct {
 	bidService       *service.BidService
 	broadcastService *service.BroadcastService
 	aliasService     *service.AliasService
+	depositService   *service.DepositService
 	auctionTimer     *service.AuctionTimer
 }
 
@@ -30,6 +31,7 @@ func NewWsMessageHandler(
 	bidService *service.BidService,
 	broadcastService *service.BroadcastService,
 	aliasService *service.AliasService,
+	depositService *service.DepositService,
 	auctionTimer *service.AuctionTimer,
 ) *WsMessageHandler {
 	return &WsMessageHandler{
@@ -38,6 +40,7 @@ func NewWsMessageHandler(
 		bidService:       bidService,
 		broadcastService: broadcastService,
 		aliasService:     aliasService,
+		depositService:   depositService,
 		auctionTimer:     auctionTimer,
 	}
 }
@@ -152,6 +155,19 @@ func (h *WsMessageHandler) OnBid(client *ws.Client, payload *ws.BidPayload) erro
 		return nil
 	}
 
+	// Deposit check: if auction requires deposit, verify user has paid
+	if required, _ := h.depositService.IsRequired(ctx, payload.AuctionID); required {
+		if !h.depositService.HasDeposit(ctx, client.UserID, payload.AuctionID) {
+			client.SendMessage(ws.ServerMessage{
+				Type: ws.MsgBidResult,
+				Code: errcode.CodeDepositRequired,
+				Msg:  "请先缴纳保证金",
+				Ts:   time.Now().UnixMilli(),
+			})
+			return nil
+		}
+	}
+
 	// Place bid via BidService
 	result, err := h.bidService.PlaceBid(ctx, payload.AuctionID, client.UserID, payload.Amount)
 	if err != nil {
@@ -210,8 +226,14 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 		[]string{string(model.StatusActive), string(model.StatusExtended)}).
 		First(&auction).Error
 
+	// Include room info (title, streamUrl) for the client
+	var liveRoom model.LiveRoom
+	h.db.Select("id, title, stream_url").First(&liveRoom, roomID)
+
 	roomState := map[string]any{
-		"roomId": roomID,
+		"roomId":    roomID,
+		"roomTitle": liveRoom.Title,
+		"streamUrl": liveRoom.StreamURL,
 	}
 
 	if err == nil {
@@ -235,20 +257,26 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 				rankingDTO = h.buildBlindRanking(ranking, client.UserID)
 			}
 
+			depositRequired := auction.DepositAmount.IsPositive()
+			hasDeposit := !depositRequired || h.depositService.HasDeposit(ctx, auction.ID, client.UserID)
+
 			roomState["auction"] = map[string]any{
-				"id":            auction.ID,
-				"productId":     auction.ProductID,
-				"mode":          auction.Mode,
-				"status":        status,
-				"currentPrice":  currentPrice,
-				"endTime":       endTime,
-				"bidCount":      bidCount,
-				"ranking":       rankingDTO,
-				"myRank":        userRank,
-				"myAmount":      userAmount,
-				"myAlias":       alias,
-				"serverTime":    time.Now().UnixMilli(),
+				"id":              auction.ID,
+				"productId":       auction.ProductID,
+				"mode":            auction.Mode,
+				"status":          status,
+				"currentPrice":    currentPrice,
+				"endTime":         endTime,
+				"bidCount":        bidCount,
+				"ranking":         rankingDTO,
+				"myRank":          userRank,
+				"myAmount":        userAmount,
+				"myAlias":         alias,
+				"serverTime":      time.Now().UnixMilli(),
 				"incrementAmount": auction.IncrementAmount.InexactFloat64(),
+				"depositRequired": depositRequired,
+				"depositAmount":   auction.DepositAmount.InexactFloat64(),
+				"hasDeposit":      hasDeposit,
 			}
 		}
 	}

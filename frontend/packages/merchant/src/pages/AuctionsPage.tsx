@@ -18,6 +18,7 @@ interface CreateForm {
   startingPrice: string;
   incrementAmount: string;
   ceilingPrice: string;
+  depositAmount: string;
   durationSeconds: string;
   autoExtendSeconds: string;
 }
@@ -29,6 +30,7 @@ const emptyForm: CreateForm = {
   startingPrice: '0',
   incrementAmount: '100',
   ceilingPrice: '',
+  depositAmount: '500',
   durationSeconds: '120',
   autoExtendSeconds: '20',
 };
@@ -76,6 +78,9 @@ export default function AuctionsPage() {
       };
       if (form.ceilingPrice) {
         data.ceilingPrice = Number(form.ceilingPrice);
+      }
+      if (form.depositAmount && Number(form.depositAmount) > 0) {
+        data.depositAmount = Number(form.depositAmount);
       }
       await auctionApi.create(data);
       setShowCreate(false);
@@ -203,6 +208,17 @@ export default function AuctionsPage() {
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">保证金 (¥, 0 = 无需保证金)</label>
+                <input
+                  type="number"
+                  value={form.depositAmount}
+                  onChange={(e) => setForm({ ...form, depositAmount: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  min="0"
+                  placeholder="0 表示无需保证金"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">竞拍时长 (秒)</label>
@@ -246,6 +262,7 @@ export default function AuctionsPage() {
               <th className="text-left px-6 py-3 text-sm text-gray-500 font-medium">起拍价</th>
               <th className="text-left px-6 py-3 text-sm text-gray-500 font-medium">当前价</th>
               <th className="text-left px-6 py-3 text-sm text-gray-500 font-medium">出价次数</th>
+              <th className="text-left px-6 py-3 text-sm text-gray-500 font-medium">保证金</th>
               <th className="text-left px-6 py-3 text-sm text-gray-500 font-medium">状态</th>
               <th className="text-left px-6 py-3 text-sm text-gray-500 font-medium">操作</th>
             </tr>
@@ -253,7 +270,7 @@ export default function AuctionsPage() {
           <tbody className="divide-y">
             {auctions.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-gray-400">暂无竞拍</td>
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-400">暂无竞拍</td>
               </tr>
             )}
             {auctions.map((a) => {
@@ -269,6 +286,9 @@ export default function AuctionsPage() {
                   <td className="px-6 py-4 tabular-nums">¥{a.startingPrice}</td>
                   <td className="px-6 py-4 tabular-nums font-medium text-orange-600">¥{a.currentPrice}</td>
                   <td className="px-6 py-4">{a.bidCount}</td>
+                  <td className="px-6 py-4 tabular-nums text-sm">
+                    {a.depositAmount > 0 ? `¥${a.depositAmount}` : <span className="text-gray-400">-</span>}
+                  </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 rounded-full text-xs ${s.color}`}>{s.label}</span>
                   </td>

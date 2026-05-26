@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { merchantApi } from '@jingpai/shared';
 
 interface Stats {
@@ -57,22 +58,22 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border p-6">
             <h3 className="font-bold text-gray-700 mb-3">快速操作</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <a href="/rooms" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
+              <Link to="/rooms" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
                 <div className="text-2xl mb-1">📡</div>
                 <div className="text-sm text-gray-700">直播间管理</div>
-              </a>
-              <a href="/products" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
+              </Link>
+              <Link to="/products" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
                 <div className="text-2xl mb-1">📦</div>
                 <div className="text-sm text-gray-700">商品管理</div>
-              </a>
-              <a href="/auctions" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
+              </Link>
+              <Link to="/auctions" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
                 <div className="text-2xl mb-1">🔨</div>
                 <div className="text-sm text-gray-700">竞拍管理</div>
-              </a>
-              <a href="/orders" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
+              </Link>
+              <Link to="/orders" className="block p-4 rounded-lg bg-gray-50 hover:bg-gray-100 text-center transition">
                 <div className="text-2xl mb-1">📋</div>
                 <div className="text-sm text-gray-700">订单管理</div>
-              </a>
+              </Link>
             </div>
           </div>
         </>

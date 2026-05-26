@@ -13,17 +13,18 @@ import (
 )
 
 type Handler struct {
-	db           *gorm.DB
-	rdb          *redis.Client
-	hub          *ws.Hub
-	bidService   *service.BidService
-	orderService *service.OrderService
-	auctionTimer *service.AuctionTimer
-	auctionFSM   *service.AuctionFSM
+	db             *gorm.DB
+	rdb            *redis.Client
+	hub            *ws.Hub
+	bidService     *service.BidService
+	orderService   *service.OrderService
+	depositService *service.DepositService
+	auctionTimer   *service.AuctionTimer
+	auctionFSM     *service.AuctionFSM
 }
 
-func NewHandler(db *gorm.DB, rdb *redis.Client, hub *ws.Hub, bidService *service.BidService, orderService *service.OrderService, auctionTimer *service.AuctionTimer, auctionFSM *service.AuctionFSM) *Handler {
-	return &Handler{db: db, rdb: rdb, hub: hub, bidService: bidService, orderService: orderService, auctionTimer: auctionTimer, auctionFSM: auctionFSM}
+func NewHandler(db *gorm.DB, rdb *redis.Client, hub *ws.Hub, bidService *service.BidService, orderService *service.OrderService, depositService *service.DepositService, auctionTimer *service.AuctionTimer, auctionFSM *service.AuctionFSM) *Handler {
+	return &Handler{db: db, rdb: rdb, hub: hub, bidService: bidService, orderService: orderService, depositService: depositService, auctionTimer: auctionTimer, auctionFSM: auctionFSM}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
@@ -36,7 +37,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	// Public routes
 	public := r.Group("/api")
 	{
-		public.POST("/auth/register", h.Register)
+		public.POST("/auth/register", limiter.RegisterRateLimit(5, 1*time.Minute), h.Register)
 		public.POST("/auth/login", h.Login)
 	}
 
@@ -61,6 +62,11 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		auth.POST("/orders/:id/pay", h.PayOrder)
 		auth.POST("/orders/:id/confirm", h.ConfirmReceive)
 		auth.POST("/orders/:id/cancel", h.CancelOrder)
+
+		// Deposits
+		auth.POST("/auctions/:id/deposit", h.PayDeposit)
+		auth.GET("/auctions/:id/deposit", h.GetDepositStatus)
+		auth.GET("/user/deposits", h.ListUserDeposits)
 	}
 
 	// Merchant routes
@@ -72,6 +78,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		merchant.GET("/products", h.ListMerchantProducts)
 		merchant.PUT("/products/:id", h.UpdateProduct)
 		merchant.DELETE("/products/:id", h.DeleteProduct)
+		merchant.PUT("/products/:id/list", h.ListProduct)
+		merchant.PUT("/products/:id/unlist", h.UnlistProduct)
 
 		// Rooms
 		merchant.POST("/rooms", h.CreateRoom)

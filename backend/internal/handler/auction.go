@@ -14,14 +14,15 @@ import (
 )
 
 type CreateAuctionRequest struct {
-	ProductID         uint    `json:"productId" binding:"required"`
-	RoomID            uint    `json:"roomId" binding:"required"`
-	Mode              string  `json:"mode" binding:"required,oneof=OPEN BLIND"`
-	StartingPrice     float64 `json:"startingPrice"`
-	IncrementAmount   float64 `json:"incrementAmount" binding:"required,gt=0"`
+	ProductID         uint     `json:"productId" binding:"required"`
+	RoomID            uint     `json:"roomId" binding:"required"`
+	Mode              string   `json:"mode" binding:"required,oneof=OPEN BLIND"`
+	StartingPrice     float64  `json:"startingPrice"`
+	IncrementAmount   float64  `json:"incrementAmount" binding:"required,gt=0"`
 	CeilingPrice      *float64 `json:"ceilingPrice"`
-	DurationSeconds   uint    `json:"durationSeconds" binding:"required,min=10"`
-	AutoExtendSeconds uint    `json:"autoExtendSeconds" binding:"min=5,max=60"`
+	DurationSeconds   uint     `json:"durationSeconds" binding:"required,min=10"`
+	AutoExtendSeconds uint     `json:"autoExtendSeconds" binding:"min=5,max=60"`
+	DepositAmount     *float64 `json:"depositAmount"`
 }
 
 func (h *Handler) CreateAuction(c *gin.Context) {
@@ -32,6 +33,21 @@ func (h *Handler) CreateAuction(c *gin.Context) {
 	}
 
 	merchantID, _ := c.Get("userID")
+
+	// Validate product is LISTED
+	var product model.Product
+	if err := h.db.First(&product, req.ProductID).Error; err != nil {
+		response.BadRequest(c, "商品不存在")
+		return
+	}
+	if product.MerchantID != merchantID.(uint) {
+		response.Forbidden(c, "无权操作该商品")
+		return
+	}
+	if product.Status != model.ProductListed {
+		response.BadRequest(c, "商品未上架，请先上架商品")
+		return
+	}
 
 	auction := model.Auction{
 		ProductID:         req.ProductID,
@@ -49,6 +65,10 @@ func (h *Handler) CreateAuction(c *gin.Context) {
 	if req.CeilingPrice != nil {
 		cp := decimal.NewFromFloat(*req.CeilingPrice)
 		auction.CeilingPrice = &cp
+	}
+
+	if req.DepositAmount != nil {
+		auction.DepositAmount = decimal.NewFromFloat(*req.DepositAmount)
 	}
 
 	if req.AutoExtendSeconds == 0 {
@@ -146,6 +166,9 @@ func (h *Handler) UpdateAuction(c *gin.Context) {
 		cp := decimal.NewFromFloat(*req.CeilingPrice)
 		auction.CeilingPrice = &cp
 	}
+	if req.DepositAmount != nil {
+		auction.DepositAmount = decimal.NewFromFloat(*req.DepositAmount)
+	}
 
 	h.db.Save(&auction)
 	response.OK(c, auction)
@@ -209,6 +232,8 @@ func (h *Handler) StartAuction(c *gin.Context) {
 				"durationSeconds": auction.DurationSeconds,
 				"endTime":         h.auctionTimer.GetEndTime(auction.ID),
 				"serverTime":      time.Now().UnixMilli(),
+				"depositRequired": auction.DepositAmount.IsPositive(),
+				"depositAmount":   auction.DepositAmount.InexactFloat64(),
 			},
 			Ts: time.Now().UnixMilli(),
 		})
@@ -263,6 +288,9 @@ func (h *Handler) CancelAuction(c *gin.Context) {
 	// Cancel timer and cleanup Redis
 	h.auctionTimer.CancelTimer(auction.ID)
 	h.bidService.CleanupAuctionState(ctx, auction.ID)
+
+	// Refund all deposits
+	go h.depositService.RefundByAuction(ctx, auction.ID, 0)
 
 	// Broadcast auction cancelled
 	if room := h.hub.GetRoom(auction.RoomID); room != nil {

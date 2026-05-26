@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"jingpai/internal/config"
+	"jingpai/internal/metrics"
 	"jingpai/internal/model"
 	"jingpai/internal/pkg/errcode"
 )
@@ -171,33 +172,46 @@ func NewBidService(rdb *redis.Client, db *gorm.DB, aliasService *AliasService, c
 // PlaceBid is the main entry point for processing a bid.
 // Five-layer funnel: memory pre-check → dedup → rate limit → Lua atomic → async persist
 func (s *BidService) PlaceBid(ctx context.Context, auctionID, userID uint, amount float64) (*BidResult, error) {
+	start := time.Now()
 	amountCents := decimalToCents(amount)
 
 	// ── L1: Memory Pre-Validation ──
 	if err := s.memoryPreCheck(ctx, auctionID, amountCents); err != nil {
+		metrics.BidsTotal.WithLabelValues("rejected_precheck").Inc()
+		metrics.BidCacheHits.WithLabelValues("L1_precheck", "rejected").Inc()
 		return &BidResult{Accepted: false, Msg: err.Error()}, err
 	}
+	metrics.BidCacheHits.WithLabelValues("L1_precheck", "passed").Inc()
 
 	// ── L2: Dedup (same user + same amount within 500ms) ──
 	if s.isDuplicate(userID, auctionID, amountCents) {
+		metrics.BidsTotal.WithLabelValues("rejected_dedup").Inc()
+		metrics.BidCacheHits.WithLabelValues("L2_dedup", "rejected").Inc()
 		return &BidResult{Accepted: false, Msg: "重复出价，请稍后再试"}, errcode.ErrBidTooFrequent
 	}
+	metrics.BidCacheHits.WithLabelValues("L2_dedup", "passed").Inc()
 
 	// ── L3: Redis Rate Limit (1 bid/sec/user/auction) ──
 	if err := s.checkRateLimit(ctx, userID, auctionID); err != nil {
+		metrics.BidsTotal.WithLabelValues("rejected_ratelimit").Inc()
 		return &BidResult{Accepted: false, Msg: err.Error()}, err
 	}
 
 	// ── L4: Redis Lua Atomic Bid ──
 	luaResult, err := s.executeLuaBid(ctx, auctionID, userID, amountCents)
 	if err != nil {
+		metrics.BidsTotal.WithLabelValues("error").Inc()
 		return &BidResult{Accepted: false, Msg: "系统繁忙，请重试"}, err
 	}
 
 	bidResult := s.handleLuaResult(luaResult, auctionID)
 	if !bidResult.Accepted {
+		metrics.BidsTotal.WithLabelValues("rejected_lua").Inc()
 		return bidResult, s.luaCodeToError(luaResult.Code)
 	}
+
+	metrics.BidsTotal.WithLabelValues("accepted").Inc()
+	metrics.BidDuration.Observe(time.Since(start).Seconds())
 
 	// ── L5: Update extend count if extended ──
 	if luaResult.Extended {

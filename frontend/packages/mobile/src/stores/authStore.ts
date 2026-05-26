@@ -4,8 +4,8 @@ import { User, authApi } from '@jingpai/shared';
 interface AuthState {
   user: User | null;
   token: string | null;
-  login: (phone: string, password: string) => Promise<void>;
-  register: (phone: string, nickname: string, password: string) => Promise<void>;
+  login: (account: string, password: string) => Promise<void>;
+  register: (data: { phone?: string; email?: string; nickname: string; password: string }) => Promise<void>;
   logout: () => void;
   loadProfile: () => Promise<void>;
 }
@@ -14,14 +14,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: localStorage.getItem('token'),
 
-  login: async (phone, password) => {
-    const res: any = await authApi.login({ phone, password });
+  login: async (account, password) => {
+    const res: any = await authApi.login({ account, password });
     localStorage.setItem('token', res.data.token);
     set({ user: res.data.user, token: res.data.token });
   },
 
-  register: async (phone, nickname, password) => {
-    const res: any = await authApi.register({ phone, nickname, password, role: 'USER' });
+  register: async (data) => {
+    const res: any = await authApi.register({ ...data, role: 'USER' });
     localStorage.setItem('token', res.data.token);
     set({ user: res.data.user, token: res.data.token });
   },

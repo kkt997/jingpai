@@ -44,6 +44,30 @@ func (rl *RateLimiter) APIRateLimit(limit int64, window time.Duration) gin.Handl
 	}
 }
 
+// RegisterRateLimit limits registration attempts to maxAttempts per IP per window.
+func (rl *RateLimiter) RegisterRateLimit(maxAttempts int64, window time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		ctx := context.Background()
+		key := fmt.Sprintf("rate:register:%s", ip)
+
+		count, err := rl.rdb.Incr(ctx, key).Result()
+		if err != nil {
+			c.Next()
+			return
+		}
+		if count == 1 {
+			rl.rdb.Expire(ctx, key, window)
+		}
+		if count > maxAttempts {
+			response.Fail(c, 429, 5001, "注册过于频繁，请稍后再试")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // BidRateLimit checks bid frequency: 1 bid per user per auction per second.
 // Used by BidService internally for WebSocket bids, but also available as HTTP middleware.
 func (rl *RateLimiter) BidRateLimit() gin.HandlerFunc {

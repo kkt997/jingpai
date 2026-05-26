@@ -11,6 +11,9 @@ interface AuctionState {
   endTime: number;
   extendCount: number;
   maxExtendCount: number;
+  depositRequired: boolean;
+  depositAmount: number;
+  hasDeposit: boolean;
 
   initFromRoomState: (data: any) => void;
   onNewBid: (data: any) => void;
@@ -18,6 +21,7 @@ interface AuctionState {
   onAuctionExtend: (data: any) => void;
   onAuctionEnd: (data: any) => void;
   onCountdownSync: (data: any) => void;
+  setDepositPaid: () => void;
   reset: () => void;
 }
 
@@ -31,6 +35,9 @@ export const useAuctionStore = create<AuctionState>((set) => ({
   endTime: 0,
   extendCount: 0,
   maxExtendCount: 10,
+  depositRequired: false,
+  depositAmount: 0,
+  hasDeposit: false,
 
   initFromRoomState: (data) =>
     set({
@@ -41,6 +48,9 @@ export const useAuctionStore = create<AuctionState>((set) => ({
       currentPrice: data.auction?.currentPrice || 0,
       bidCount: data.auction?.bidCount || 0,
       endTime: data.auction?.endTime || 0,
+      depositRequired: data.auction?.depositRequired || false,
+      depositAmount: data.auction?.depositAmount || 0,
+      hasDeposit: data.auction?.hasDeposit || false,
     }),
 
   onNewBid: (data) =>
@@ -54,6 +64,8 @@ export const useAuctionStore = create<AuctionState>((set) => ({
       status: 'ACTIVE',
       endTime: data.endTime,
       currentPrice: data.startingPrice || 0,
+      depositRequired: data.depositRequired || false,
+      depositAmount: data.depositAmount || 0,
     }),
 
   onAuctionExtend: (data) =>
@@ -72,6 +84,8 @@ export const useAuctionStore = create<AuctionState>((set) => ({
       status: data.status,
     }),
 
+  setDepositPaid: () => set({ hasDeposit: true }),
+
   reset: () =>
     set({
       auction: null,
@@ -82,5 +96,8 @@ export const useAuctionStore = create<AuctionState>((set) => ({
       bidCount: 0,
       endTime: 0,
       extendCount: 0,
+      depositRequired: false,
+      depositAmount: 0,
+      hasDeposit: false,
     }),
 }));

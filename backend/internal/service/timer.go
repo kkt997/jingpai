@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"jingpai/internal/config"
+	"jingpai/internal/metrics"
 	"jingpai/internal/model"
 	"jingpai/internal/ws"
 )
@@ -31,6 +32,7 @@ type AuctionTimer struct {
 	broadcastService *BroadcastService
 	aliasService     *AliasService
 	orderService     *OrderService
+	depositService   *DepositService
 	fsm              *AuctionFSM
 	cfg              *config.AuctionConfig
 
@@ -51,6 +53,7 @@ func NewAuctionTimer(
 	broadcastService *BroadcastService,
 	aliasService *AliasService,
 	orderService *OrderService,
+	depositService *DepositService,
 	fsm *AuctionFSM,
 	cfg *config.AuctionConfig,
 ) *AuctionTimer {
@@ -62,6 +65,7 @@ func NewAuctionTimer(
 		broadcastService: broadcastService,
 		aliasService:     aliasService,
 		orderService:     orderService,
+		depositService:   depositService,
 		fsm:              fsm,
 		cfg:              cfg,
 		stopSync:         make(chan struct{}),
@@ -108,6 +112,7 @@ func (t *AuctionTimer) StartAuction(auction *model.Auction) {
 	})
 	t.timers[auction.ID] = entry
 
+	metrics.AuctionsActive.Inc()
 	zap.L().Info("auction timer started",
 		zap.Uint("auctionId", auction.ID),
 		zap.Duration("duration", duration),
@@ -262,9 +267,13 @@ func (t *AuctionTimer) onTimeout(auctionID uint) {
 	// Broadcast auction end
 	t.broadcastAuctionEnd(ctx, entry.roomID, auctionID, &auction, newStatus)
 
-	// Generate order if completed (will be implemented in step 4)
+	metrics.AuctionsActive.Dec()
+	metrics.AuctionCompletions.WithLabelValues(string(newStatus)).Inc()
+
 	if newStatus == model.StatusCompleted {
 		go t.generateOrder(ctx, &auction)
+	} else if newStatus == model.StatusFailed {
+		go t.refundAllDeposits(ctx, auctionID)
 	}
 
 	zap.L().Info("auction ended",
@@ -320,7 +329,7 @@ func (t *AuctionTimer) getWinnerID(ctx context.Context, auctionID uint) uint {
 	return parseUint(val)
 }
 
-// generateOrder creates an order when auction completes successfully.
+// generateOrder creates an order when auction completes, and settles deposits.
 func (t *AuctionTimer) generateOrder(ctx context.Context, auction *model.Auction) {
 	winnerID := t.getWinnerID(ctx, auction.ID)
 	if winnerID == 0 {
@@ -332,6 +341,15 @@ func (t *AuctionTimer) generateOrder(ctx context.Context, auction *model.Auction
 		zap.L().Error("failed to create order via OrderService",
 			zap.Error(err), zap.Uint("auctionId", auction.ID))
 	}
+
+	// Settle deposits: deduct winner's, refund everyone else's
+	t.depositService.DeductWinner(ctx, auction.ID, winnerID)
+	t.depositService.RefundByAuction(ctx, auction.ID, winnerID)
+}
+
+// refundAllDeposits refunds all deposits when auction fails or is cancelled.
+func (t *AuctionTimer) refundAllDeposits(ctx context.Context, auctionID uint) {
+	t.depositService.RefundByAuction(ctx, auctionID, 0)
 }
 
 // countdownSyncLoop broadcasts countdown_sync every N seconds to all active rooms.
@@ -447,6 +465,9 @@ func (t *AuctionTimer) CompleteByCeiling(auctionID uint, winnerID uint, finalPri
 
 	// Generate order
 	go t.generateOrder(ctx, &auction)
+
+	metrics.AuctionsActive.Dec()
+	metrics.AuctionCompletions.WithLabelValues("COMPLETED_CEILING").Inc()
 
 	zap.L().Info("auction completed by ceiling price",
 		zap.Uint("auctionId", auctionID),

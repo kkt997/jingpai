@@ -7,6 +7,7 @@ export type RoomStatus = 'PREPARING' | 'LIVE' | 'ENDED';
 export interface User {
   id: number;
   phone: string;
+  email: string;
   nickname: string;
   avatarUrl: string;
   role: UserRole;
@@ -42,6 +43,7 @@ export interface Auction {
   startingPrice: number;
   incrementAmount: number;
   ceilingPrice: number | null;
+  depositAmount: number;
   durationSeconds: number;
   autoExtendSeconds: number;
   currentPrice: number;
@@ -51,6 +53,18 @@ export interface Auction {
   scheduledEnd: string | null;
   product: Product;
   room: LiveRoom;
+}
+
+export type DepositStatus = 'FROZEN' | 'DEDUCTED' | 'REFUNDED';
+
+export interface Deposit {
+  id: number;
+  userId: number;
+  auctionId: number;
+  amount: number;
+  status: DepositStatus;
+  createdAt: string;
+  auction?: Auction;
 }
 
 export interface RankItem {

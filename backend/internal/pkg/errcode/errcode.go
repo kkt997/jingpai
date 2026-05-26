@@ -21,6 +21,9 @@ var (
 	ErrTooManyConns     = errors.New("连接数超限")
 
 	ErrInvalidTransition = errors.New("无效的状态转移")
+	ErrDepositRequired   = errors.New("请先缴纳保证金")
+	ErrDepositExists     = errors.New("已缴纳保证金")
+	ErrDepositNotAllowed = errors.New("当前状态不可缴纳保证金")
 )
 
 const (

@@ -38,6 +38,7 @@ type Auction struct {
 	CeilingPrice     *decimal.Decimal `gorm:"type:decimal(12,2)" json:"ceilingPrice"`
 	DurationSeconds  uint             `gorm:"not null" json:"durationSeconds"`
 	AutoExtendSeconds uint            `gorm:"not null;default:20" json:"autoExtendSeconds"`
+	DepositAmount     decimal.Decimal  `gorm:"type:decimal(12,2);not null;default:0" json:"depositAmount"`
 
 	CurrentPrice decimal.Decimal `gorm:"type:decimal(12,2);not null;default:0" json:"currentPrice"`
 	WinnerID     *uint           `json:"winnerId"`

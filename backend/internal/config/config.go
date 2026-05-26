@@ -43,10 +43,11 @@ type JWTConfig struct {
 }
 
 type AuctionConfig struct {
-	DefaultExtendSeconds int `mapstructure:"default_extend_seconds"`
-	MinExtendSeconds     int `mapstructure:"min_extend_seconds"`
-	MaxExtendCount       int `mapstructure:"max_extend_count"`
-	DecayPerExtend       int `mapstructure:"decay_per_extend"`
+	DefaultExtendSeconds int     `mapstructure:"default_extend_seconds"`
+	MinExtendSeconds     int     `mapstructure:"min_extend_seconds"`
+	MaxExtendCount       int     `mapstructure:"max_extend_count"`
+	DecayPerExtend       int     `mapstructure:"decay_per_extend"`
+	DefaultDepositAmount float64 `mapstructure:"default_deposit_amount"`
 }
 
 type WebSocketConfig struct {
