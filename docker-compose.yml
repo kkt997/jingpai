@@ -51,6 +51,8 @@ services:
       REDIS_ADDR: redis:6379
       SERVER_MODE: release
       JWT_SECRET: jingpai-production-secret-change-me
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -84,3 +86,4 @@ volumes:
   mysql_data:
   redis_data:
   prometheus_data:
+  uploads_data:

@@ -7,6 +7,7 @@ import AuctionsPage from './pages/AuctionsPage';
 import RoomsPage from './pages/RoomsPage';
 import OrdersPage from './pages/OrdersPage';
 import LivePanelPage from './pages/LivePanelPage';
+import RoomPreviewPage from './pages/RoomPreviewPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token');
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="rooms" element={<RoomsPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="live-panel" element={<LivePanelPage />} />
+        <Route path="room/:roomId" element={<RoomPreviewPage />} />
       </Route>
     </Routes>
   );

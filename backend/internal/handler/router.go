@@ -69,10 +69,15 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		auth.GET("/user/deposits", h.ListUserDeposits)
 	}
 
+	// Static file serving for uploads
+	r.Static("/uploads", "./uploads")
+
 	// Merchant routes
 	merchant := r.Group("/api/merchant")
 	merchant.Use(middleware.AuthRequired(), middleware.MerchantRequired())
 	{
+		// Upload
+		merchant.POST("/upload", h.UploadFile)
 		// Products
 		merchant.POST("/products", h.CreateProduct)
 		merchant.GET("/products", h.ListMerchantProducts)

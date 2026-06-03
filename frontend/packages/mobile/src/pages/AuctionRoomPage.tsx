@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { WsClient } from '@jingpai/shared';
 import { useAuthStore } from '../stores/authStore';
 import { useAuctionStore } from '../stores/auctionStore';
@@ -14,6 +14,7 @@ import NotificationLayer from '../components/NotificationLayer';
 
 export default function AuctionRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
+  const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
   const wsRef = useRef<WsClient | null>(null);
 
@@ -47,12 +48,22 @@ export default function AuctionRoomPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       {/* Live stream */}
-      <LiveStreamPlayer
-        streamUrl={room.streamUrl}
-        roomTitle={`直播间 #${roomId}`}
-        onlineCount={room.onlineCount}
-        connectionStatus={room.connectionStatus}
-      />
+      <div className="relative">
+        <LiveStreamPlayer
+          streamUrl={room.streamUrl}
+          roomTitle={`直播间 #${roomId}`}
+          onlineCount={room.onlineCount}
+          connectionStatus={room.connectionStatus}
+        />
+        <button
+          onClick={() => navigate(-1)}
+          className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center active:bg-black/70 transition"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+      </div>
 
       {/* Auction info */}
       <div className="px-4 py-3 border-b border-gray-800">
