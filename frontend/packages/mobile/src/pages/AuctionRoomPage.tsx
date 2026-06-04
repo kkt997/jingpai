@@ -1,25 +1,45 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { WsClient } from '@jingpai/shared';
 import { useAuthStore } from '../stores/authStore';
 import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
 import { useRoomStore } from '../stores/roomStore';
+import { useChatStore } from '../stores/chatStore';
+import { useShowcaseStore } from '../stores/showcaseStore';
 import { createWsDispatcher } from '../ws/dispatcher';
 import LiveStreamPlayer from '../components/LiveStreamPlayer';
 import CountdownTimer from '../components/CountdownTimer';
 import RankingList from '../components/RankingList';
+import ChatList from '../components/ChatList';
 import BidController from '../components/BidController';
 import NotificationLayer from '../components/NotificationLayer';
+import ProductDetailDrawer from '../components/ProductDetailDrawer';
+import ShowcaseDrawer from '../components/ShowcaseDrawer';
+import { History, Sparkles, ShoppingBag, Send, MessageSquare, Trophy, Flame } from 'lucide-react';
 
 export default function AuctionRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const wsRef = useRef<WsClient | null>(null);
+  const [showShowcase, setShowShowcase] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<number | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<'chat' | 'rank'>('chat');
+  const [chatInput, setChatInput] = useState('');
 
   const auction = useAuctionStore();
   const bid = useBidStore();
   const room = useRoomStore();
+  const chatStore = useChatStore();
+  const showcase = useShowcaseStore();
+
+  const handleSendChat = () => {
+    if (!chatInput.trim() || !wsRef.current) return;
+    const myAlias = bid.ranking.find((r) => r.isMe)?.alias || user?.nickname || '我';
+    chatStore.sendChatMessage(wsRef.current, chatInput, myAlias);
+    setChatInput('');
+  };
 
   useEffect(() => {
     if (!token || !roomId) return;
@@ -38,6 +58,7 @@ export default function AuctionRoomPage() {
       auction.reset();
       bid.reset();
       room.reset();
+      showcase.reset();
     };
   }, [token, roomId]);
 
@@ -45,7 +66,7 @@ export default function AuctionRoomPage() {
   const isEnded = auction.status === 'COMPLETED' || auction.status === 'FAILED' || auction.status === 'CANCELLED';
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col select-none antialiased">
       {/* Live stream */}
       <LiveStreamPlayer
         streamUrl={room.streamUrl}
@@ -54,65 +75,175 @@ export default function AuctionRoomPage() {
         connectionStatus={room.connectionStatus}
       />
 
-      {/* Auction info */}
-      <div className="px-4 py-3 border-b border-gray-800">
-        <h2 className="font-bold text-lg">{auction.product?.title || '等待竞拍开始...'}</h2>
-        <div className="flex items-center gap-2 mt-1">
-          {auction.mode === 'BLIND' && (
-            <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/20 text-purple-400">
-              盲拍模式
-            </span>
+      {/* Auction Info & Title */}
+      <div className="px-4 py-4 border-b border-zinc-900 bg-zinc-900/20">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 space-y-1.5">
+            <h2 className="font-bold text-base tracking-tight text-zinc-100 leading-snug">
+              {auction.product?.title || '等待竞拍开始...'}
+            </h2>
+            {auction.product && (
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => setSelectedProductId(auction.product?.id)}
+                  className="inline-flex items-center gap-1.5 text-xs text-brand hover:text-brand-dark transition font-semibold"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>查看商品详情 &gt;</span>
+                </button>
+                <span className="w-px h-3 bg-zinc-800" />
+                <button
+                  onClick={() => setShowShowcase(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-500 transition font-semibold"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>本场拍品柜 &gt;</span>
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex shrink-0 gap-1.5">
+            {auction.mode === 'BLIND' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                盲拍
+              </span>
+            )}
+            {isActive && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">
+                竞拍中
+              </span>
+            )}
+            {isEnded && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700/40">
+                已结束
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Price & Countdown Glass Card */}
+      <div className="px-4 py-4">
+        <div className="backdrop-blur-md bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5 shadow-lg shadow-black/20 text-center flex flex-col items-center justify-center space-y-4">
+          {auction.mode === 'BLIND' && isActive ? (
+            <div>
+              <div className="text-zinc-500 text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <span>盲拍进行中</span>
+              </div>
+              <div className="text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                已有 {auction.bidCount} 人出价
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">
+                {isEnded ? '本场成交价' : '当前最高出价'}
+              </div>
+              <div className="text-3xl font-extrabold tracking-tight mt-1.5 tabular-nums bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500 bg-clip-text text-transparent drop-shadow-sm">
+                ¥{auction.currentPrice.toLocaleString()}
+              </div>
+            </div>
           )}
-          {isActive && (
-            <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400">
-              竞拍中
-            </span>
-          )}
-          {isEnded && (
-            <span className="px-2 py-0.5 rounded-full text-xs bg-gray-500/20 text-gray-400">
-              已结束
-            </span>
+
+          {isActive && <CountdownTimer endTime={auction.endTime} />}
+
+          {auction.extendCount > 0 && isActive && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-400/90 font-medium bg-amber-500/5 px-2.5 py-1 rounded-lg border border-amber-500/10">
+              <History className="w-3.5 h-3.5" />
+              <span>已延时 {auction.extendCount}/{auction.maxExtendCount} 次</span>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Price + Countdown */}
-      <div className="px-4 py-4 text-center border-b border-gray-800">
-        {auction.mode === 'BLIND' && isActive ? (
-          <div>
-            <div className="text-gray-400 text-sm">盲拍进行中</div>
-            <div className="text-2xl font-bold text-amber-400 mt-1">
-              已有 {auction.bidCount} 人出价
+      {/* 实时动态常驻横幅 (Ticker Banner) */}
+      {isActive && (
+        <div className="mx-4 mb-2">
+          <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-brand/10 via-orange-500/5 to-transparent border border-brand/10 rounded-xl">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-300 truncate">
+              <Flame className="w-3.5 h-3.5 text-brand animate-pulse shrink-0" />
+              {bid.ranking.length > 0 ? (
+                auction.mode === 'BLIND' ? (
+                  <span>🔒 盲拍激烈竞争中，已有 {auction.bidCount} 人出价！</span>
+                ) : (
+                  <span className="truncate">
+                    🏆 领先者：<span className="text-brand font-bold">{bid.ranking[0].alias}</span> 暂以 <span className="text-amber-400 tabular-nums">¥{bid.ranking[0].amount?.toLocaleString()}</span> 领先！
+                  </span>
+                )
+              ) : (
+                <span>🔨 竞拍进行中，首位出价虚位以待！</span>
+              )}
             </div>
+            {bid.myRank && (
+              <span className="shrink-0 ml-2 text-[10px] font-bold text-brand bg-brand/5 px-2 py-0.5 rounded-md border border-brand/15">
+                第 {bid.myRank} 名
+              </span>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* 页签选择栏 (Tab Navigation) */}
+      <div className="flex px-4 border-b border-zinc-900/60 bg-zinc-950/20 shrink-0">
+        <button
+          onClick={() => setActiveTab('chat')}
+          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition duration-200 ${
+            activeTab === 'chat'
+              ? 'border-brand text-brand'
+              : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>互动聊天 ({chatStore.messages.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('rank')}
+          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition duration-200 ${
+            activeTab === 'rank'
+              ? 'border-brand text-brand'
+              : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          <Trophy className="w-3.5 h-3.5" />
+          <span>竞拍排行 ({bid.ranking.length})</span>
+        </button>
+      </div>
+
+      {/* 滑动内容区 (Main Content) */}
+      <div className="flex-1 overflow-hidden px-4 py-2 flex flex-col min-h-[220px]">
+        {activeTab === 'chat' ? (
+          <ChatList messages={chatStore.messages} />
         ) : (
-          <div>
-            <div className="text-gray-400 text-sm">
-              {isEnded ? '成交价' : '当前最高价'}
-            </div>
-            <div className="text-3xl font-bold text-orange-400 mt-1 tabular-nums">
-              ¥{auction.currentPrice.toLocaleString()}
-            </div>
-          </div>
-        )}
-        {isActive && <CountdownTimer endTime={auction.endTime} />}
-        {auction.extendCount > 0 && isActive && (
-          <div className="text-xs text-yellow-500 mt-1">
-            已延时 {auction.extendCount}/{auction.maxExtendCount} 次
+          <div className="flex-1 overflow-y-auto py-1">
+            <RankingList ranking={bid.ranking} />
           </div>
         )}
       </div>
 
-      {/* Ranking */}
-      <div className="flex-1 overflow-auto px-4 py-3">
-        <div className="flex justify-between items-center mb-2">
-          <h3 className="text-sm font-bold text-gray-400">实时排行榜</h3>
-          {bid.myRank && (
-            <span className="text-xs text-orange-400">我的排名: 第{bid.myRank}名</span>
-          )}
+      {/* 弹幕输入发送条 (常驻或浮动在出价底栏之上) */}
+      {activeTab === 'chat' && (
+        <div className={`px-4 py-2.5 bg-zinc-950/90 border-t border-zinc-900 flex items-center gap-2 shrink-0 ${!isActive ? 'pb-6' : ''}`}>
+          <input
+            type="text"
+            placeholder="聊点什么吧，理性发言..."
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSendChat();
+            }}
+            maxLength={100}
+            className="flex-1 px-4 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 transition duration-200"
+          />
+          <button
+            onClick={handleSendChat}
+            disabled={!chatInput.trim()}
+            className="p-2 rounded-xl bg-brand/10 hover:bg-brand/20 disabled:opacity-40 text-brand transition duration-150 flex items-center justify-center shrink-0"
+          >
+            <Send className="w-4 h-4" />
+          </button>
         </div>
-        <RankingList ranking={bid.ranking} />
-      </div>
+      )}
 
       {/* Bid controller (fixed bottom) */}
       {isActive && wsRef.current && (
@@ -120,6 +251,25 @@ export default function AuctionRoomPage() {
       )}
 
       <NotificationLayer />
+
+      <ProductDetailDrawer
+        isOpen={selectedProductId !== undefined}
+        onClose={() => setSelectedProductId(undefined)}
+        productId={selectedProductId}
+        fallbackProduct={selectedProductId === auction.product?.id ? auction.product : null}
+      />
+
+      <ShowcaseDrawer
+        isOpen={showShowcase}
+        onClose={() => setShowShowcase(false)}
+        onViewProduct={(productId) => {
+          setShowShowcase(false);
+          setSelectedProductId(productId);
+        }}
+        onFocusBid={() => {
+          setActiveTab('rank');
+        }}
+      />
     </div>
   );
 }

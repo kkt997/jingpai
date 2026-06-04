@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { WsClient, depositApi } from '@jingpai/shared';
 import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
+import { ShieldAlert, ShieldCheck, TrendingUp, EyeOff, Coins } from 'lucide-react';
 
 interface Props {
   ws: WsClient;
@@ -47,35 +48,37 @@ export default function BidController({ ws }: Props) {
 
   if (depositRequired && !hasDeposit) {
     return (
-      <div className="sticky bottom-0 bg-gray-900 border-t border-gray-800 px-4 py-4 space-y-3">
-        <div className="text-center space-y-2">
-          <div className="text-amber-400 text-sm font-medium">
-            本场竞拍需缴纳保证金方可出价
+      <div className="sticky bottom-0 bg-zinc-950/95 border-t border-zinc-900 backdrop-blur-lg px-4 py-5 space-y-4 shadow-2xl">
+        <div className="text-center space-y-1.5">
+          <div className="text-amber-400 text-sm font-semibold flex items-center justify-center gap-1.5">
+            <ShieldAlert className="w-4 h-4 animate-bounce" />
+            <span>本场竞拍需缴纳保证金方可出价</span>
           </div>
-          <div className="text-gray-400 text-xs">
+          <div className="text-zinc-500 text-xs font-medium">
             保证金 ¥{depositAmount.toLocaleString()} · 未中标自动退还 · 中标抵扣货款
           </div>
         </div>
         <button
           onClick={handlePayDeposit}
           disabled={depositLoading}
-          className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 active:scale-[0.98] disabled:opacity-50 transition"
+          className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:shadow-lg hover:shadow-amber-500/10 active:scale-[0.98] disabled:opacity-50 transition-all duration-200 text-sm"
         >
-          {depositLoading ? '处理中...' : `缴纳保证金 ¥${depositAmount.toLocaleString()}`}
+          {depositLoading ? '正在处理中...' : `缴纳保证金 ¥${depositAmount.toLocaleString()}`}
         </button>
       </div>
     );
   }
 
   return (
-    <div className="sticky bottom-0 bg-gray-900 border-t border-gray-800 px-4 py-3 space-y-3">
+    <div className="sticky bottom-0 bg-zinc-950/95 border-t border-zinc-900 backdrop-blur-lg px-4 py-4 space-y-4 shadow-2xl">
       {lastBidResult && !lastBidResult.accepted && (
-        <div className="text-red-400 text-xs text-center">{lastBidResult.msg}</div>
+        <div className="text-red-400 text-xs font-semibold text-center mt-1 animate-pulse">{lastBidResult.msg}</div>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="flex-1 relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">¥</span>
+      {/* Input & Bid Action */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 relative rounded-xl bg-zinc-900/60 border border-zinc-800/80 focus-within:border-brand/80 focus-within:ring-1 focus-within:ring-brand/30 transition duration-200">
+          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-base">¥</span>
           <input
             type="number"
             value={amount}
@@ -83,38 +86,53 @@ export default function BidController({ ws }: Props) {
             min={minBid}
             max={ceiling ?? undefined}
             step={increment}
-            className="w-full pl-8 pr-3 py-3 rounded-xl bg-gray-800 border border-gray-700 text-lg font-bold text-center focus:border-orange-500 focus:outline-none tabular-nums"
+            className="w-full pl-8 pr-3 py-3 bg-transparent text-zinc-100 text-lg font-bold text-center focus:outline-none tabular-nums"
           />
         </div>
         <button
           onClick={handleBid}
           disabled={bidPending || amount < minBid}
-          className="px-6 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-orange-500 to-red-500 active:scale-95 disabled:opacity-50 transition whitespace-nowrap"
+          className="px-8 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-brand to-orange-500 hover:shadow-lg hover:shadow-brand/20 active:scale-95 disabled:opacity-40 transition-all duration-200 text-sm flex items-center gap-1.5"
         >
-          {bidPending ? '...' : '出价'}
+          <Coins className="w-4 h-4" />
+          <span>{bidPending ? '...' : '出价'}</span>
         </button>
       </div>
 
+      {/* Quick Add buttons */}
       <div className="flex gap-2 justify-center">
         {[1, 5, 10].map((n) => (
           <button
             key={n}
-            onClick={() => setAmount((a) => a + increment * n)}
-            className="px-4 py-1.5 bg-gray-800 rounded-lg text-sm text-gray-300 active:bg-gray-700 transition"
+            onClick={() => setAmount((a: number) => a + increment * n)}
+            className="px-4 py-2 bg-zinc-900/60 border border-zinc-800/60 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50 active:scale-95 transition-all duration-150"
           >
             +{(increment * n).toLocaleString()}
           </button>
         ))}
       </div>
 
-      {depositRequired && hasDeposit && (
-        <p className="text-xs text-green-500/70 text-center">保证金已缴纳 ¥{depositAmount.toLocaleString()}</p>
-      )}
-      {mode === 'BLIND' ? (
-        <p className="text-xs text-gray-600 text-center">盲拍模式 · 出价金额仅自己可见</p>
-      ) : (
-        <p className="text-xs text-gray-600 text-center">最低出价 ¥{minBid.toLocaleString()}</p>
-      )}
+      {/* Auxiliary Notice */}
+      <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-zinc-600">
+        {depositRequired && hasDeposit && (
+          <div className="flex items-center gap-1 text-emerald-500/90 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
+            <ShieldCheck className="w-3 h-3" />
+            <span>已缴保证金 ¥{depositAmount.toLocaleString()}</span>
+          </div>
+        )}
+        {!depositRequired && (
+          <div className="flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>最低出价 ¥{minBid.toLocaleString()}</span>
+          </div>
+        )}
+        {mode === 'BLIND' && (
+          <div className="flex items-center gap-1 text-purple-400 bg-purple-500/5 px-2 py-0.5 rounded border border-purple-500/10">
+            <EyeOff className="w-3 h-3" />
+            <span>盲拍 · 金额仅自己可见</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -302,10 +302,10 @@
 docker compose up -d --build
 
 # 访问地址
-用户端 H5:     http://localhost/
-商家端 PC:     http://localhost/merchant/
-后端 API:      http://localhost/api/...
-WebSocket:     ws://localhost/ws?token=xxx
+用户端 H5:     http://localhost:8888/
+商家端 PC:     http://localhost:8888/merchant/
+后端 API:      http://localhost:8888/api/...
+WebSocket:     ws://localhost:8888/ws?token=xxx
 Prometheus:    http://localhost:9090/
 指标端点:      http://localhost:8080/metrics
 MySQL:         localhost:3306 (root / jingpai123)

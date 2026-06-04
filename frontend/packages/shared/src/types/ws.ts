@@ -33,3 +33,6 @@ export const MSG_COUNTDOWN_SYNC = 'countdown_sync';
 export const MSG_USER_COUNT = 'user_count';
 export const MSG_TIME_SYNC = 'time_sync';
 export const MSG_ERROR = 'error';
+
+export const MSG_CHAT = 'chat';
+export const MSG_CHAT_MESSAGE = 'chat_message';

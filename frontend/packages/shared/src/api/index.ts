@@ -53,6 +53,7 @@ export const productApi = {
   create: (data: { title: string; description?: string; images: string[]; category?: string }) =>
     api.post('/merchant/products', data),
   list: () => api.get('/merchant/products'),
+  get: (id: number) => api.get(`/products/${id}`),
   update: (id: number, data: Record<string, unknown>) => api.put(`/merchant/products/${id}`, data),
   delete: (id: number) => api.delete(`/merchant/products/${id}`),
   listProduct: (id: number) => api.put(`/merchant/products/${id}/list`),

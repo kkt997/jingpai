@@ -9,11 +9,16 @@ import {
   MSG_COUNTDOWN_SYNC,
   MSG_USER_COUNT,
   MSG_JOIN_ROOM,
+  ServerMessage,
+  ConnectionStatus,
+  MSG_CHAT_MESSAGE,
 } from '@jingpai/shared';
 import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useRoomStore } from '../stores/roomStore';
+import { useChatStore } from '../stores/chatStore';
+import { useShowcaseStore } from '../stores/showcaseStore';
 
 /**
  * WsDispatcher is a pure logic layer that connects WebSocket messages to Zustand stores.
@@ -24,12 +29,14 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
   const bidStore = useBidStore.getState;
   const notify = useNotificationStore.getState;
   const room = useRoomStore.getState;
+  const chat = useChatStore.getState;
+  const showcase = useShowcaseStore.getState;
 
   const unsubscribers: (() => void)[] = [];
 
   // Connection status tracking
   unsubscribers.push(
-    ws.onStatus((status) => {
+    ws.onStatus((status: ConnectionStatus) => {
       room().setConnectionStatus(status);
       if (status === 'connected') {
         ws.send({ type: MSG_JOIN_ROOM, payload: { roomId } });
@@ -39,19 +46,20 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
 
   // Room state (full sync on join/reconnect)
   unsubscribers.push(
-    ws.on(MSG_ROOM_STATE, (msg) => {
+    ws.on(MSG_ROOM_STATE, (msg: ServerMessage) => {
       const data = msg.data as any;
       room().setRoomInfo({ title: data.roomTitle, streamUrl: data.streamUrl });
       auction().initFromRoomState(data);
       if (data?.auction?.ranking) {
         bidStore().onRankingUpdate(data.auction);
       }
+      showcase().loadShowcase(roomId);
     })
   );
 
   // New bid broadcast
   unsubscribers.push(
-    ws.on(MSG_NEW_BID, (msg) => {
+    ws.on(MSG_NEW_BID, (msg: ServerMessage) => {
       const data = msg.data as any;
       const prevRank = bidStore().myRank;
 
@@ -59,6 +67,17 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
       if (data?.ranking) {
         bidStore().onRankingUpdate(data);
       }
+      showcase().onNewBid(data.amount);
+
+      // 添加系统弹幕公告
+      const nickname = data.winnerNickname || '神秘买家';
+      chat().addMessage({
+        nickname: '系统',
+        message: `${nickname} 出价 ¥${data.amount?.toLocaleString()}`,
+        isMe: false,
+        createdAt: new Date().toISOString(),
+        type: 'system',
+      });
 
       // "被超越" notification — rank dropped
       const newRank = bidStore().myRank;
@@ -75,7 +94,7 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
 
   // Bid result (only sent to the bidder)
   unsubscribers.push(
-    ws.on(MSG_BID_RESULT, (msg) => {
+    ws.on(MSG_BID_RESULT, (msg: ServerMessage) => {
       const data = msg.data as any;
       bidStore().onBidResult(data);
       if (data?.accepted && data?.rank === 1) {
@@ -86,32 +105,59 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
 
   // Auction start
   unsubscribers.push(
-    ws.on(MSG_AUCTION_START, (msg) => {
-      auction().onAuctionStart(msg.data as any);
+    ws.on(MSG_AUCTION_START, (msg: ServerMessage) => {
+      const data = msg.data as any;
+      auction().onAuctionStart(data);
+      showcase().onAuctionStart(data);
+      chat().addMessage({
+        nickname: '系统',
+        message: `竞拍正式开始！起拍价 ¥${data.startingPrice?.toLocaleString()}`,
+        isMe: false,
+        createdAt: new Date().toISOString(),
+        type: 'system',
+      });
     })
   );
 
   // Auction extend
   unsubscribers.push(
-    ws.on(MSG_AUCTION_EXTEND, (msg) => {
+    ws.on(MSG_AUCTION_EXTEND, (msg: ServerMessage) => {
       const data = msg.data as any;
       auction().onAuctionExtend(data);
+      if (data?.currentPrice) {
+        showcase().onNewBid(data.currentPrice);
+      }
       notify().push({
         type: 'auction_extending',
         message: `竞拍延时 ${data.extendSeconds} 秒！`,
         duration: 3000,
+      });
+      chat().addMessage({
+        nickname: '系统',
+        message: `出价激烈！竞拍延时 ${data.extendSeconds} 秒！`,
+        isMe: false,
+        createdAt: new Date().toISOString(),
+        type: 'system',
       });
     })
   );
 
   // Auction end
   unsubscribers.push(
-    ws.on(MSG_AUCTION_END, (msg) => {
+    ws.on(MSG_AUCTION_END, (msg: ServerMessage) => {
       const data = msg.data as any;
       auction().onAuctionEnd(data);
+      showcase().onAuctionEnd(data);
 
       if (data.result === 'completed') {
         const myRank = bidStore().myRank;
+        chat().addMessage({
+          nickname: '系统',
+          message: `竞拍结束！恭喜 ${data.winnerNickname || '巅峰竞投者'} 以 ¥${data.finalPrice?.toLocaleString()} 成交！`,
+          isMe: false,
+          createdAt: new Date().toISOString(),
+          type: 'system',
+        });
         if (myRank === 1) {
           notify().push({
             type: 'auction_won',
@@ -126,6 +172,13 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
           });
         }
       } else if (data.result === 'failed') {
+        chat().addMessage({
+          nickname: '系统',
+          message: '竞拍流拍，无人出价',
+          isMe: false,
+          createdAt: new Date().toISOString(),
+          type: 'system',
+        });
         notify().push({
           type: 'auction_lost',
           message: '竞拍流拍，无人出价',
@@ -135,16 +188,32 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
     })
   );
 
+  // Chat message broadcast
+  unsubscribers.push(
+    ws.on(MSG_CHAT_MESSAGE, (msg: ServerMessage) => {
+      const data = msg.data as any;
+      if (data && !data.isMe) {
+        chat().addMessage({
+          nickname: data.nickname || '神秘买家',
+          message: data.message,
+          isMe: false,
+          createdAt: data.createdAt || new Date().toISOString(),
+          type: data.nickname === '系统' ? 'system' : 'user',
+        });
+      }
+    })
+  );
+
   // Countdown sync
   unsubscribers.push(
-    ws.on(MSG_COUNTDOWN_SYNC, (msg) => {
+    ws.on(MSG_COUNTDOWN_SYNC, (msg: ServerMessage) => {
       auction().onCountdownSync(msg.data as any);
     })
   );
 
   // User count
   unsubscribers.push(
-    ws.on(MSG_USER_COUNT, (msg) => {
+    ws.on(MSG_USER_COUNT, (msg: ServerMessage) => {
       const data = msg.data as any;
       room().setOnlineCount(data.count || 0);
     })

@@ -64,7 +64,7 @@ services:
     container_name: jingpai-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8888:80"
     depends_on:
       - backend
 

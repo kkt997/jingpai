@@ -14,8 +14,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY packages/ packages/
 
-# Build shared first, then apps
-RUN pnpm --filter @jingpai/shared build 2>/dev/null || true
+# Build apps directly
 RUN pnpm --filter @jingpai/mobile build
 RUN VITE_BASE=/merchant/ pnpm --filter @jingpai/merchant build
 
