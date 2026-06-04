@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
   timeout: 10000,
 });
 
@@ -58,6 +58,21 @@ export const productApi = {
   delete: (id: number) => api.delete(`/merchant/products/${id}`),
   listProduct: (id: number) => api.put(`/merchant/products/${id}/list`),
   unlistProduct: (id: number) => api.put(`/merchant/products/${id}/unlist`),
+};
+
+// Upload
+export const uploadApi = {
+  upload: (file: File, onProgress?: (percent: number) => void) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/merchant/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+      },
+    });
+  },
 };
 
 // Merchant stats

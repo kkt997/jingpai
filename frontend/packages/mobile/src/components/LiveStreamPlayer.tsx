@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface Props {
   streamUrl?: string;
@@ -9,45 +9,54 @@ interface Props {
 
 const DEMO_VIDEO = 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4';
 
+function isLocalFilePath(url: string) {
+  return /^file:\/\//i.test(url) || /^[a-zA-Z]:[\\\/]/.test(url);
+}
+
 export default function LiveStreamPlayer({ streamUrl, roomTitle, onlineCount, connectionStatus }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoError, setVideoError] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const src = streamUrl || DEMO_VIDEO;
+  const hasValidStream = !!streamUrl && !isLocalFilePath(streamUrl);
+  const src = hasValidStream && !useFallback ? streamUrl : DEMO_VIDEO;
+
+  const handleError = useCallback(() => {
+    if (hasValidStream && !useFallback) {
+      setUseFallback(true);
+    }
+  }, [hasValidStream, useFallback]);
+
+  useEffect(() => {
+    setUseFallback(false);
+    setIsPlaying(false);
+  }, [streamUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    video.play().then(() => setIsPlaying(true)).catch(() => {
-      setIsPlaying(false);
-    });
+    video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
   }, [src]);
 
   return (
     <div className="relative h-52 bg-black overflow-hidden">
-      {!videoError ? (
-        <video
-          ref={videoRef}
-          src={src}
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="w-full h-full object-cover"
-          onError={() => setVideoError(true)}
-          onPlaying={() => setIsPlaying(true)}
-        />
-      ) : (
-        <DemoFallback />
-      )}
+      <video
+        ref={videoRef}
+        src={src}
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="w-full h-full object-cover"
+        onError={handleError}
+        onPlaying={() => setIsPlaying(true)}
+      />
 
       {/* Dimming overlay for readability */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40 pointer-events-none" />
 
-      {/* LIVE badge */}
-      <div className="absolute top-3 left-3 flex items-center gap-2">
+      {/* LIVE badge — left-12 to leave room for external back button */}
+      <div className="absolute top-3 left-12 flex items-center gap-2">
         <div className="bg-red-600 px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 shadow-lg">
           <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
           LIVE
@@ -75,7 +84,7 @@ export default function LiveStreamPlayer({ streamUrl, roomTitle, onlineCount, co
       )}
 
       {/* Not playing hint */}
-      {!isPlaying && !videoError && (
+      {!isPlaying && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="bg-black/60 rounded-full p-4 backdrop-blur-sm">
             <svg className="w-8 h-8 opacity-60" viewBox="0 0 24 24" fill="currentColor">
@@ -84,21 +93,6 @@ export default function LiveStreamPlayer({ streamUrl, roomTitle, onlineCount, co
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function DemoFallback() {
-  return (
-    <div className="w-full h-full bg-gradient-to-br from-gray-800 via-gray-900 to-gray-800 flex flex-col items-center justify-center relative overflow-hidden">
-      {/* Animated scan lines */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(255,255,255,0.03)_2px,rgba(255,255,255,0.03)_4px)]" />
-      </div>
-      <div className="relative z-10 text-center">
-        <div className="text-4xl mb-2 opacity-40">📡</div>
-        <div className="text-sm text-gray-400">直播画面加载中...</div>
-      </div>
     </div>
   );
 }

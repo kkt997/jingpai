@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/layout.tsx","./src/pages/auctionspage.tsx","./src/pages/dashboardpage.tsx","./src/pages/livepanelpage.tsx","./src/pages/loginpage.tsx","./src/pages/orderspage.tsx","./src/pages/productspage.tsx","./src/pages/roompreviewpage.tsx","./src/pages/roomspage.tsx"],"version":"5.9.3"}
