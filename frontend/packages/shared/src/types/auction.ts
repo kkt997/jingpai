@@ -57,12 +57,24 @@ export interface Auction {
 
 export type DepositStatus = 'FROZEN' | 'DEDUCTED' | 'REFUNDED';
 
+export interface DepositStatusResponse {
+  required: boolean;
+  amount: number;
+  hasPaid: boolean;
+  status: DepositStatus | null;
+  canRefund: boolean;
+  refundHint: string;
+}
+
 export interface Deposit {
   id: number;
   userId: number;
   auctionId: number;
   amount: number;
   status: DepositStatus;
+  refundReason?: string;
+  refundedAt?: string | null;
+  deductedAt?: string | null;
   createdAt: string;
   auction?: Auction;
 }

@@ -18,7 +18,7 @@ export default function ProfilePage() {
     .filter((d) => d.status === 'FROZEN')
     .reduce((sum, d) => sum + d.amount, 0);
 
-  const totalDeducted = deposits
+  const settledAmount = deposits
     .filter((d) => d.status === 'DEDUCTED')
     .reduce((sum, d) => sum + d.amount, 0);
 
@@ -37,8 +37,8 @@ export default function ProfilePage() {
   };
 
   const statusLabel: Record<string, { text: string; color: string }> = {
-    FROZEN: { text: '冻结中', color: 'text-orange-400 bg-orange-400/10' },
-    DEDUCTED: { text: '已抵扣', color: 'text-blue-400 bg-blue-400/10' },
+    FROZEN: { text: '平台托管中', color: 'text-orange-400 bg-orange-400/10' },
+    DEDUCTED: { text: '历史已结算', color: 'text-blue-400 bg-blue-400/10' },
     REFUNDED: { text: '已退还', color: 'text-green-400 bg-green-400/10' },
   };
 
@@ -72,7 +72,7 @@ export default function ProfilePage() {
         <div className="px-5 py-4 flex items-center justify-between border-b border-gray-800">
           <div className="flex items-center gap-2">
             <span className="text-lg">💰</span>
-            <span className="font-bold">我的钱包</span>
+            <span className="font-bold">平台保证金</span>
           </div>
           <button
             onClick={() => setShowDeposits(!showDeposits)}
@@ -87,13 +87,13 @@ export default function ProfilePage() {
             <div className="text-xl font-bold text-orange-400">
               ¥{frozenAmount.toLocaleString()}
             </div>
-            <div className="text-xs text-gray-500 mt-1">冻结保证金</div>
+            <div className="text-xs text-gray-500 mt-1">托管中</div>
           </div>
           <div className="py-4 text-center">
             <div className="text-xl font-bold text-blue-400">
-              ¥{totalDeducted.toLocaleString()}
+              ¥{settledAmount.toLocaleString()}
             </div>
-            <div className="text-xs text-gray-500 mt-1">已抵扣</div>
+            <div className="text-xs text-gray-500 mt-1">历史已结算</div>
           </div>
           <div className="py-4 text-center">
             <div className="text-xl font-bold text-green-400">

@@ -65,6 +65,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 		// Deposits
 		auth.POST("/auctions/:id/deposit", h.PayDeposit)
+		auth.POST("/auctions/:id/deposit/refund", h.RefundDeposit)
 		auth.GET("/auctions/:id/deposit", h.GetDepositStatus)
 		auth.GET("/user/deposits", h.ListUserDeposits)
 	}

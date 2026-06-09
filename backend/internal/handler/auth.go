@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"html"
 	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"jingpai/internal/middleware"
 	"jingpai/internal/model"
@@ -61,6 +63,16 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	req.Nickname = sanitize(req.Nickname)
+	if req.Nickname == "" {
+		response.BadRequest(c, "昵称不能为空")
+		return
+	}
+	if len([]rune(req.Nickname)) < 2 || len([]rune(req.Nickname)) > 20 {
+		response.BadRequest(c, "昵称长度需为 2-20 个字符")
+		return
+	}
+
 	if req.Phone != "" {
 		var exists model.User
 		if err := h.db.Where("phone = ?", req.Phone).First(&exists).Error; err == nil {
@@ -85,13 +97,26 @@ func (h *Handler) Register(c *gin.Context) {
 	user := model.User{
 		Phone:        req.Phone,
 		Email:        req.Email,
-		Nickname:     sanitize(req.Nickname),
+		Nickname:     req.Nickname,
 		PasswordHash: string(hash),
 		Role:         model.UserRole(req.Role),
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
-		response.ServerError(c, "创建用户失败")
+		var msg string
+		switch {
+		case req.Phone != "" && isDuplicateEntry(err, "phone"):
+			msg = "手机号已注册"
+		case req.Email != "" && isDuplicateEntry(err, "email"):
+			msg = "邮箱已注册"
+		case isDuplicateEntry(err, "nickname"):
+			msg = "昵称已被使用"
+		case errors.Is(err, gorm.ErrDuplicatedKey):
+			msg = "账号信息已存在，请更换后重试"
+		default:
+			msg = "创建用户失败，请稍后重试"
+		}
+		response.BadRequest(c, msg)
 		return
 	}
 
@@ -105,6 +130,17 @@ func (h *Handler) Register(c *gin.Context) {
 		"user":  user,
 		"token": token,
 	})
+}
+
+func isDuplicateEntry(err error, field string) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	field = strings.ToLower(field)
+	return strings.Contains(msg, "duplicate") && strings.Contains(msg, field) ||
+		strings.Contains(msg, "duplicated") && strings.Contains(msg, field) ||
+		strings.Contains(msg, "unique") && strings.Contains(msg, field)
 }
 
 func (h *Handler) Login(c *gin.Context) {

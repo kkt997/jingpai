@@ -258,7 +258,8 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 			}
 
 			depositRequired := auction.DepositAmount.IsPositive()
-			hasDeposit := !depositRequired || h.depositService.HasDeposit(ctx, auction.ID, client.UserID)
+			depositState := h.depositService.GetDepositStatus(ctx, client.UserID, auction.ID)
+			hasDeposit := !depositRequired || depositState["hasPaid"].(bool)
 
 			roomState["auction"] = map[string]any{
 				"id":              auction.ID,
@@ -277,6 +278,9 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 				"depositRequired": depositRequired,
 				"depositAmount":   auction.DepositAmount.InexactFloat64(),
 				"hasDeposit":      hasDeposit,
+				"depositStatus":   depositState["status"],
+				"canRefund":       depositState["canRefund"],
+				"refundHint":      depositState["refundHint"],
 			}
 		}
 	}

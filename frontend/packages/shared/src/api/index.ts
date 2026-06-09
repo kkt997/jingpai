@@ -93,6 +93,7 @@ export const auctionApi = {
 // Deposits
 export const depositApi = {
   pay: (auctionId: number) => api.post(`/auctions/${auctionId}/deposit`),
+  refund: (auctionId: number) => api.post(`/auctions/${auctionId}/deposit/refund`),
   status: (auctionId: number) => api.get(`/auctions/${auctionId}/deposit`),
   list: () => api.get('/user/deposits'),
 };

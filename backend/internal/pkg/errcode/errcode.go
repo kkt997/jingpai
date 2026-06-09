@@ -17,13 +17,15 @@ var (
 	ErrBidTooFrequent   = errors.New("出价太频繁，每秒仅可出价1次")
 	ErrBidCeilingHit    = errors.New("已达封顶价")
 
-	ErrRoomNotFound     = errors.New("直播间不存在")
-	ErrTooManyConns     = errors.New("连接数超限")
+	ErrRoomNotFound      = errors.New("直播间不存在")
+	ErrTooManyConns      = errors.New("连接数超限")
 
 	ErrInvalidTransition = errors.New("无效的状态转移")
 	ErrDepositRequired   = errors.New("请先缴纳保证金")
 	ErrDepositExists     = errors.New("已缴纳保证金")
 	ErrDepositNotAllowed = errors.New("当前状态不可缴纳保证金")
+	ErrDepositNotFound   = errors.New("保证金记录不存在")
+	ErrDepositNotRefundable = errors.New("当前保证金不可退还")
 )
 
 const (
@@ -33,6 +35,7 @@ const (
 	CodeBidTooFrequent   = 4003
 	CodeNotInRoom        = 4004
 	CodeDepositRequired  = 4005
+	CodeDepositNotRefundable = 4006
 	CodeInvalidPayload   = 4010
 	CodeUnauthorized     = 4011
 	CodeInternalError    = 5000

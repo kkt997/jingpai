@@ -21,19 +21,25 @@ func (h *Handler) PayDeposit(c *gin.Context) {
 	response.OK(c, deposit)
 }
 
+func (h *Handler) RefundDeposit(c *gin.Context) {
+	auctionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	userID, _ := c.Get("userID")
+
+	deposit, err := h.depositService.Refund(c.Request.Context(), userID.(uint), uint(auctionID), "USER_REQUEST")
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.OK(c, deposit)
+}
+
 func (h *Handler) GetDepositStatus(c *gin.Context) {
 	auctionID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	userID, _ := c.Get("userID")
 	ctx := c.Request.Context()
 
-	required, amount := h.depositService.IsRequired(ctx, uint(auctionID))
-	hasPaid := h.depositService.HasDeposit(ctx, userID.(uint), uint(auctionID))
-
-	response.OK(c, map[string]any{
-		"required": required,
-		"amount":   amount,
-		"hasPaid":  hasPaid,
-	})
+	response.OK(c, h.depositService.GetDepositStatus(ctx, userID.(uint), uint(auctionID)))
 }
 
 func (h *Handler) ListUserDeposits(c *gin.Context) {

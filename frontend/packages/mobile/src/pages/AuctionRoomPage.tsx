@@ -16,7 +16,7 @@ import BidController from '../components/BidController';
 import NotificationLayer from '../components/NotificationLayer';
 import ProductDetailDrawer from '../components/ProductDetailDrawer';
 import ShowcaseDrawer from '../components/ShowcaseDrawer';
-import { History, Sparkles, ShoppingBag, Send, MessageSquare, Trophy, Flame } from 'lucide-react';
+import { History, Sparkles, ShoppingBag, Send, MessageSquare, Trophy, Flame, WalletCards, Gavel } from 'lucide-react';
 
 export default function AuctionRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -28,6 +28,8 @@ export default function AuctionRoomPage() {
   const [selectedProductId, setSelectedProductId] = useState<number | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<'chat' | 'rank'>('chat');
   const [chatInput, setChatInput] = useState('');
+  const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
+  const [bidPanelExpanded, setBidPanelExpanded] = useState(false);
 
   const auction = useAuctionStore();
   const bid = useBidStore();
@@ -60,11 +62,14 @@ export default function AuctionRoomPage() {
       bid.reset();
       room.reset();
       showcase.reset();
+      setDepositDrawerOpen(false);
+      setBidPanelExpanded(false);
     };
   }, [token, roomId]);
 
   const isActive = auction.status === 'ACTIVE' || auction.status === 'EXTENDED';
   const isEnded = auction.status === 'COMPLETED' || auction.status === 'FAILED' || auction.status === 'CANCELLED';
+  const showVideoActions = !!wsRef.current && (auction.depositRequired || auction.status === 'PENDING' || isActive);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col select-none antialiased">
@@ -77,6 +82,9 @@ export default function AuctionRoomPage() {
           connectionStatus={room.connectionStatus}
         />
         <button
+          type="button"
+          aria-label="返回上一页"
+          title="返回"
           onClick={() => navigate(-1)}
           className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center active:bg-black/70 transition"
         >
@@ -84,6 +92,40 @@ export default function AuctionRoomPage() {
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
+
+        {showVideoActions && (
+          <>
+            <button
+              type="button"
+              onClick={() => setDepositDrawerOpen(true)}
+              className={`absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1 rounded-2xl border px-2.5 py-3 shadow-xl backdrop-blur-md transition ${
+                auction.hasDeposit
+                  ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200'
+                  : 'border-amber-500/30 bg-black/55 text-amber-200'
+              }`}
+            >
+              <WalletCards className="w-4 h-4" />
+              <span className="text-[10px] font-bold leading-tight text-center whitespace-pre-line">
+                {auction.hasDeposit ? '已参拍' : '参加\n竞拍'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBidPanelExpanded(true)}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1 rounded-2xl border px-2.5 py-3 shadow-xl backdrop-blur-md transition ${
+                isActive
+                  ? 'border-brand/30 bg-black/55 text-brand'
+                  : 'border-zinc-700/60 bg-black/45 text-zinc-300'
+              }`}
+            >
+              <Gavel className="w-4 h-4" />
+              <span className="text-[10px] font-bold leading-tight text-center whitespace-pre-line">
+                {isActive ? (auction.depositRequired && !auction.hasDeposit ? '先参拍' : '我要\n出价') : '等待\n开拍'}
+              </span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* Auction Info & Title */}
@@ -96,6 +138,8 @@ export default function AuctionRoomPage() {
             {auction.product && (
               <div className="flex items-center gap-3 flex-wrap">
                 <button
+                  type="button"
+                  title="查看商品详情"
                   onClick={() => setSelectedProductId(auction.product?.id)}
                   className="inline-flex items-center gap-1.5 text-xs text-brand hover:text-brand-dark transition font-semibold"
                 >
@@ -104,6 +148,8 @@ export default function AuctionRoomPage() {
                 </button>
                 <span className="w-px h-3 bg-zinc-800" />
                 <button
+                  type="button"
+                  title="打开本场拍品柜"
                   onClick={() => setShowShowcase(true)}
                   className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-500 transition font-semibold"
                 >
@@ -198,6 +244,8 @@ export default function AuctionRoomPage() {
       {/* 页签选择栏 (Tab Navigation) */}
       <div className="flex px-4 border-b border-zinc-900/60 bg-zinc-950/20 shrink-0">
         <button
+          type="button"
+          title="切换到互动聊天"
           onClick={() => setActiveTab('chat')}
           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition duration-200 ${
             activeTab === 'chat'
@@ -209,6 +257,8 @@ export default function AuctionRoomPage() {
           <span>互动聊天 ({chatStore.messages.length})</span>
         </button>
         <button
+          type="button"
+          title="切换到竞拍排行"
           onClick={() => setActiveTab('rank')}
           className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition duration-200 ${
             activeTab === 'rank'
@@ -247,6 +297,8 @@ export default function AuctionRoomPage() {
             className="flex-1 px-4 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 transition duration-200"
           />
           <button
+            type="button"
+            title="发送聊天消息"
             onClick={handleSendChat}
             disabled={!chatInput.trim()}
             className="p-2 rounded-xl bg-brand/10 hover:bg-brand/20 disabled:opacity-40 text-brand transition duration-150 flex items-center justify-center shrink-0"
@@ -257,8 +309,14 @@ export default function AuctionRoomPage() {
       )}
 
       {/* Bid controller (fixed bottom) */}
-      {isActive && wsRef.current && (
-        <BidController ws={wsRef.current} />
+      {wsRef.current && (
+        <BidController
+          ws={wsRef.current}
+          depositDrawerOpen={depositDrawerOpen}
+          bidPanelExpanded={bidPanelExpanded}
+          onDepositDrawerChange={setDepositDrawerOpen}
+          onBidPanelExpandedChange={setBidPanelExpanded}
+        />
       )}
 
       <NotificationLayer />
@@ -279,6 +337,7 @@ export default function AuctionRoomPage() {
         }}
         onFocusBid={() => {
           setActiveTab('rank');
+          setBidPanelExpanded(true);
         }}
       />
     </div>

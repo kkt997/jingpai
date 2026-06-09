@@ -290,7 +290,7 @@ func (h *Handler) CancelAuction(c *gin.Context) {
 	h.bidService.CleanupAuctionState(ctx, auction.ID)
 
 	// Refund all deposits
-	go h.depositService.RefundByAuction(ctx, auction.ID, 0)
+	go h.depositService.RefundByAuction(ctx, auction.ID, "AUCTION_CANCELLED")
 
 	// Broadcast auction cancelled
 	if room := h.hub.GetRoom(auction.RoomID); room != nil {

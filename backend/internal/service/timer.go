@@ -329,7 +329,7 @@ func (t *AuctionTimer) getWinnerID(ctx context.Context, auctionID uint) uint {
 	return parseUint(val)
 }
 
-// generateOrder creates an order when auction completes, and settles deposits.
+// generateOrder creates an order when auction completes.
 func (t *AuctionTimer) generateOrder(ctx context.Context, auction *model.Auction) {
 	winnerID := t.getWinnerID(ctx, auction.ID)
 	if winnerID == 0 {
@@ -341,15 +341,11 @@ func (t *AuctionTimer) generateOrder(ctx context.Context, auction *model.Auction
 		zap.L().Error("failed to create order via OrderService",
 			zap.Error(err), zap.Uint("auctionId", auction.ID))
 	}
-
-	// Settle deposits: deduct winner's, refund everyone else's
-	t.depositService.DeductWinner(ctx, auction.ID, winnerID)
-	t.depositService.RefundByAuction(ctx, auction.ID, winnerID)
 }
 
-// refundAllDeposits refunds all deposits when auction fails or is cancelled.
+// refundAllDeposits refunds all deposits when auction fails, is cancelled, or auto-refund is triggered.
 func (t *AuctionTimer) refundAllDeposits(ctx context.Context, auctionID uint) {
-	t.depositService.RefundByAuction(ctx, auctionID, 0)
+	t.depositService.RefundByAuction(ctx, auctionID, "AUCTION_END")
 }
 
 // countdownSyncLoop broadcasts countdown_sync every N seconds to all active rooms.
@@ -465,6 +461,9 @@ func (t *AuctionTimer) CompleteByCeiling(auctionID uint, winnerID uint, finalPri
 
 	// Generate order
 	go t.generateOrder(ctx, &auction)
+
+	// Refund all deposits after auction end; guarantee fund is platform-managed
+	go t.refundAllDeposits(ctx, auctionID)
 
 	metrics.AuctionsActive.Dec()
 	metrics.AuctionCompletions.WithLabelValues("COMPLETED_CEILING").Inc()

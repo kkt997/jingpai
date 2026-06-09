@@ -46,6 +46,17 @@ func (s *DepositService) HasDeposit(ctx context.Context, userID, auctionID uint)
 	return false
 }
 
+func (s *DepositService) GetDepositByUserAuction(ctx context.Context, userID, auctionID uint) (*model.Deposit, error) {
+	var deposit model.Deposit
+	if err := s.db.Where("user_id = ? AND auction_id = ?", userID, auctionID).First(&deposit).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.ErrDepositNotFound
+		}
+		return nil, err
+	}
+	return &deposit, nil
+}
+
 // IsRequired returns whether the auction requires a deposit and its amount.
 func (s *DepositService) IsRequired(ctx context.Context, auctionID uint) (bool, decimal.Decimal) {
 	var auction model.Auction
@@ -53,6 +64,35 @@ func (s *DepositService) IsRequired(ctx context.Context, auctionID uint) (bool, 
 		return false, decimal.Zero
 	}
 	return auction.DepositAmount.IsPositive(), auction.DepositAmount
+}
+
+func (s *DepositService) GetDepositStatus(ctx context.Context, userID, auctionID uint) map[string]any {
+	required, amount := s.IsRequired(ctx, auctionID)
+	status := any(nil)
+	canRefund := false
+	refundHint := ""
+
+	if deposit, err := s.GetDepositByUserAuction(ctx, userID, auctionID); err == nil {
+		status = deposit.Status
+		canRefund = deposit.Status == model.DepositFrozen
+		switch deposit.Status {
+		case model.DepositFrozen:
+			refundHint = "参拍保证金由平台托管，可随时申请退还；直播结束后自动退回"
+		case model.DepositRefunded:
+			refundHint = "保证金已退回平台钱包"
+		case model.DepositDeducted:
+			refundHint = "历史记录：该保证金已完成抵扣"
+		}
+	}
+
+	return map[string]any{
+		"required":   required,
+		"amount":     amount.InexactFloat64(),
+		"hasPaid":    s.HasDeposit(ctx, userID, auctionID),
+		"status":     status,
+		"canRefund":  canRefund,
+		"refundHint": refundHint,
+	}
 }
 
 // Freeze creates a frozen deposit for a user in an auction.
@@ -78,6 +118,29 @@ func (s *DepositService) Freeze(ctx context.Context, userID, auctionID uint) (*m
 		return nil, fmt.Errorf("商家不可参与自己的竞拍")
 	}
 
+	if deposit, err := s.GetDepositByUserAuction(ctx, userID, auctionID); err == nil {
+		if deposit.Status == model.DepositRefunded {
+			now := time.Now()
+			updates := map[string]any{
+				"status":        model.DepositFrozen,
+				"refund_reason": "",
+				"refunded_at":   nil,
+				"deducted_at":   nil,
+				"updated_at":    now,
+			}
+			if err := s.db.Model(deposit).Updates(updates).Error; err != nil {
+				return nil, fmt.Errorf("重新参与竞拍失败: %w", err)
+			}
+			deposit.Status = model.DepositFrozen
+			deposit.RefundReason = ""
+			deposit.RefundedAt = nil
+			deposit.DeductedAt = nil
+			s.rdb.Set(ctx, s.cacheKey(auctionID, userID), "1", 24*time.Hour)
+			return deposit, nil
+		}
+		return nil, errcode.ErrDepositExists
+	}
+
 	deposit := &model.Deposit{
 		UserID:    userID,
 		AuctionID: auctionID,
@@ -99,34 +162,72 @@ func (s *DepositService) Freeze(ctx context.Context, userID, auctionID uint) (*m
 	return deposit, nil
 }
 
-// RefundByAuction refunds all FROZEN deposits for an auction.
-// excludeUserID > 0 means skip the winner (their deposit gets deducted instead).
-func (s *DepositService) RefundByAuction(ctx context.Context, auctionID uint, excludeUserID uint) {
-	var deposits []model.Deposit
-	query := s.db.Where("auction_id = ? AND status = ?", auctionID, model.DepositFrozen)
-	if excludeUserID > 0 {
-		query = query.Where("user_id != ?", excludeUserID)
+func (s *DepositService) Refund(ctx context.Context, userID, auctionID uint, reason string) (*model.Deposit, error) {
+	deposit, err := s.GetDepositByUserAuction(ctx, userID, auctionID)
+	if err != nil {
+		return nil, err
 	}
-	query.Find(&deposits)
+	if deposit.Status != model.DepositFrozen {
+		return nil, errcode.ErrDepositNotRefundable
+	}
 
-	for _, d := range deposits {
-		s.db.Model(&d).Update("status", model.DepositRefunded)
-		s.rdb.Del(ctx, s.cacheKey(auctionID, d.UserID))
+	now := time.Now()
+	updates := map[string]any{
+		"status":        model.DepositRefunded,
+		"refund_reason": reason,
+		"refunded_at":   &now,
+		"updated_at":    now,
+	}
+	if err := s.db.Model(deposit).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("退还保证金失败: %w", err)
+	}
+	s.rdb.Del(ctx, s.cacheKey(auctionID, userID))
+	deposit.Status = model.DepositRefunded
+	deposit.RefundReason = reason
+	deposit.RefundedAt = &now
+	return deposit, nil
+}
+
+// RefundByAuction refunds all FROZEN deposits for an auction.
+func (s *DepositService) RefundByAuction(ctx context.Context, auctionID uint, reason string) {
+	var deposits []model.Deposit
+	s.db.Where("auction_id = ? AND status = ?", auctionID, model.DepositFrozen).Find(&deposits)
+
+	for i := range deposits {
+		if _, err := s.Refund(ctx, deposits[i].UserID, auctionID, reason); err != nil {
+			zap.L().Warn("refund by auction skipped",
+				zap.Uint("auctionId", auctionID),
+				zap.Uint("userId", deposits[i].UserID),
+				zap.Error(err),
+			)
+		}
 	}
 
 	if len(deposits) > 0 {
 		zap.L().Info("deposits refunded",
 			zap.Uint("auctionId", auctionID),
 			zap.Int("count", len(deposits)),
+			zap.String("reason", reason),
 		)
 	}
 }
 
-// DeductWinner marks the winner's deposit as DEDUCTED (applied against order payment).
+func (s *DepositService) RefundByRoomEnd(ctx context.Context, roomID uint) {
+	var auctionIDs []uint
+	s.db.Model(&model.Auction{}).Where("room_id = ?", roomID).Pluck("id", &auctionIDs)
+	for _, auctionID := range auctionIDs {
+		s.RefundByAuction(ctx, auctionID, "ROOM_END")
+	}
+}
+
+// DeductWinner marks the winner's deposit as DEDUCTED (legacy compatibility only).
 func (s *DepositService) DeductWinner(ctx context.Context, auctionID, winnerID uint) {
 	result := s.db.Model(&model.Deposit{}).
 		Where("auction_id = ? AND user_id = ? AND status = ?", auctionID, winnerID, model.DepositFrozen).
-		Update("status", model.DepositDeducted)
+		Updates(map[string]any{
+			"status":      model.DepositDeducted,
+			"deducted_at": time.Now(),
+		})
 
 	if result.RowsAffected > 0 {
 		s.rdb.Del(ctx, s.cacheKey(auctionID, winnerID))
