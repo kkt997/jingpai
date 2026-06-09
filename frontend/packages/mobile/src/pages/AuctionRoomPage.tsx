@@ -10,13 +10,11 @@ import { useShowcaseStore } from '../stores/showcaseStore';
 import { createWsDispatcher } from '../ws/dispatcher';
 import LiveStreamPlayer from '../components/LiveStreamPlayer';
 import CountdownTimer from '../components/CountdownTimer';
-import RankingList from '../components/RankingList';
-import ChatList from '../components/ChatList';
 import BidController from '../components/BidController';
 import NotificationLayer from '../components/NotificationLayer';
 import ProductDetailDrawer from '../components/ProductDetailDrawer';
 import ShowcaseDrawer from '../components/ShowcaseDrawer';
-import { History, Sparkles, ShoppingBag, Send, MessageSquare, Trophy, Flame, WalletCards, Gavel } from 'lucide-react';
+import { Eye, Send, Trophy, Clock, Sparkles, WalletCards, Gavel } from 'lucide-react';
 
 export default function AuctionRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -24,12 +22,13 @@ export default function AuctionRoomPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const wsRef = useRef<WsClient | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const [showShowcase, setShowShowcase] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<number | undefined>(undefined);
-  const [activeTab, setActiveTab] = useState<'chat' | 'rank'>('chat');
   const [chatInput, setChatInput] = useState('');
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
   const [bidPanelExpanded, setBidPanelExpanded] = useState(false);
+  const [quickCooldown, setQuickCooldown] = useState(false);
 
   const auction = useAuctionStore();
   const bid = useBidStore();
@@ -46,15 +45,12 @@ export default function AuctionRoomPage() {
 
   useEffect(() => {
     if (!token || !roomId) return;
-
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
     const ws = new WsClient(wsUrl, token);
     wsRef.current = ws;
-
     room.setRoom(Number(roomId));
     const cleanup = createWsDispatcher(ws, Number(roomId));
     ws.connect();
-
     return () => {
       cleanup();
       ws.disconnect();
@@ -67,248 +63,318 @@ export default function AuctionRoomPage() {
     };
   }, [token, roomId]);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatStore.messages]);
+
   const isActive = auction.status === 'ACTIVE' || auction.status === 'EXTENDED';
   const isEnded = auction.status === 'COMPLETED' || auction.status === 'FAILED' || auction.status === 'CANCELLED';
-  const showVideoActions = !!wsRef.current && (auction.depositRequired || auction.status === 'PENDING' || isActive);
+  const hasAuction = !!auction.auction?.id;
+  const increment = auction.auction?.incrementAmount ?? 100;
+
+  const productImage = (() => {
+    const imgs = auction.product?.images;
+    if (!imgs) return null;
+    if (Array.isArray(imgs)) return imgs[0] || null;
+    if (typeof imgs === 'string') {
+      try { const p = JSON.parse(imgs); return Array.isArray(p) ? p[0] : null; } catch { return null; }
+    }
+    return null;
+  })();
+
+  const handleQuickBid = (multiplier: number) => {
+    const auctionId = auction.auction?.id;
+    if (!wsRef.current || !auctionId || bid.bidPending || quickCooldown) return;
+    if (auction.depositRequired && !auction.hasDeposit) {
+      setDepositDrawerOpen(true);
+      return;
+    }
+    const amount = auction.currentPrice + increment * multiplier;
+    bid.placeBid(wsRef.current, auctionId, amount);
+    setQuickCooldown(true);
+    setTimeout(() => setQuickCooldown(false), 1500);
+  };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col select-none antialiased">
-      {/* Live stream */}
-      <div className="relative">
-        <LiveStreamPlayer
-          streamUrl={room.streamUrl}
-          roomTitle={`直播间 #${roomId}`}
-          onlineCount={room.onlineCount}
-          connectionStatus={room.connectionStatus}
-        />
-        <button
-          type="button"
-          aria-label="返回上一页"
-          title="返回"
-          onClick={() => navigate(-1)}
-          className="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center active:bg-black/70 transition"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </button>
-
-        {showVideoActions && (
-          <>
-            <button
-              type="button"
-              onClick={() => setDepositDrawerOpen(true)}
-              className={`absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1 rounded-2xl border px-2.5 py-3 shadow-xl backdrop-blur-md transition ${
-                auction.hasDeposit
-                  ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200'
-                  : 'border-amber-500/30 bg-black/55 text-amber-200'
-              }`}
-            >
-              <WalletCards className="w-4 h-4" />
-              <span className="text-[10px] font-bold leading-tight text-center whitespace-pre-line">
-                {auction.hasDeposit ? '已参拍' : '参加\n竞拍'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setBidPanelExpanded(true)}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1 rounded-2xl border px-2.5 py-3 shadow-xl backdrop-blur-md transition ${
-                isActive
-                  ? 'border-brand/30 bg-black/55 text-brand'
-                  : 'border-zinc-700/60 bg-black/45 text-zinc-300'
-              }`}
-            >
-              <Gavel className="w-4 h-4" />
-              <span className="text-[10px] font-bold leading-tight text-center whitespace-pre-line">
-                {isActive ? (auction.depositRequired && !auction.hasDeposit ? '先参拍' : '我要\n出价') : '等待\n开拍'}
-              </span>
-            </button>
-          </>
-        )}
+    <div className="h-[100dvh] relative overflow-hidden bg-black select-none antialiased text-white">
+      {/* ═══ Full-screen video background ═══ */}
+      <div className="absolute inset-0 z-0">
+        <LiveStreamPlayer streamUrl={room.streamUrl} />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 pointer-events-none" />
       </div>
 
-      {/* Auction Info & Title */}
-      <div className="px-4 py-4 border-b border-zinc-900 bg-zinc-900/20">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-1.5">
-            <h2 className="font-bold text-base tracking-tight text-zinc-100 leading-snug">
-              {auction.product?.title || '等待竞拍开始...'}
-            </h2>
-            {auction.product && (
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  type="button"
-                  title="查看商品详情"
-                  onClick={() => setSelectedProductId(auction.product?.id)}
-                  className="inline-flex items-center gap-1.5 text-xs text-brand hover:text-brand-dark transition font-semibold"
-                >
-                  <ShoppingBag className="w-3.5 h-3.5" />
-                  <span>查看商品详情 &gt;</span>
-                </button>
-                <span className="w-px h-3 bg-zinc-800" />
-                <button
-                  type="button"
-                  title="打开本场拍品柜"
-                  onClick={() => setShowShowcase(true)}
-                  className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-500 transition font-semibold"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>本场拍品柜 &gt;</span>
-                </button>
+      {/* ═══ Floating UI layer ═══ */}
+      <div className="absolute inset-0 z-20 flex flex-col justify-between p-3 pointer-events-none">
+
+        {/* ─── Top bar ─── */}
+        <div className="flex items-start justify-between pointer-events-auto pt-1">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="返回"
+              onClick={() => navigate(-1)}
+              className="w-8 h-8 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 active:bg-black/60"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <div className="flex items-center bg-black/40 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/10">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse mr-1.5" />
+              <span className="text-xs font-bold mr-2">LIVE</span>
+              <span className="text-xs text-gray-300">直播间 #{roomId}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <div className="bg-black/40 backdrop-blur-md rounded-full px-3 py-1 text-xs flex items-center border border-white/10">
+                <Eye className="w-3 h-3 mr-1.5 opacity-70" />
+                {room.onlineCount} 人
+              </div>
+            </div>
+
+            {/* Mini leaderboard */}
+            {bid.ranking.length > 0 && (
+              <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl p-2 w-40 shadow-xl">
+                <div className="text-[10px] text-amber-400 font-bold mb-1.5 flex items-center justify-between px-0.5">
+                  <span><Trophy className="w-3 h-3 inline mr-1" />竞拍榜</span>
+                  <span className="text-gray-400 font-normal">实时</span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {bid.ranking.slice(0, 3).map((item, i) => {
+                    const medals = ['🥇', '🥈', '🥉'];
+                    return (
+                      <div
+                        key={`${item.rank}-${item.alias}`}
+                        className={`flex items-center justify-between p-1 rounded-lg border ${
+                          item.isMe ? 'bg-brand/20 border-brand/50' : 'bg-white/5 border-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <span className="text-[10px] w-3 text-center">{medals[i]}</span>
+                          <span className={`text-[10px] truncate max-w-[3.5rem] ${item.isMe ? 'text-brand font-bold' : 'text-gray-300'}`}>
+                            {item.isMe ? '我' : item.alias}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-mono font-bold ${item.isMe ? 'text-amber-300' : 'text-gray-200'}`}>
+                          {item.amount !== null ? `¥${item.amount.toLocaleString()}` : '¥•••'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Connection status */}
+            {room.connectionStatus !== 'connected' && (
+              <div className="bg-yellow-500/90 px-3 py-1 rounded-full text-xs text-black font-medium">
+                {room.connectionStatus === 'reconnecting' ? '重连中…' : '连接断开'}
               </div>
             )}
           </div>
-          <div className="flex shrink-0 gap-1.5">
-            {auction.mode === 'BLIND' && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                盲拍
-              </span>
-            )}
-            {isActive && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">
-                竞拍中
-              </span>
-            )}
-            {isEnded && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700/40">
-                已结束
-              </span>
-            )}
+        </div>
+
+        {/* ─── Bottom section ─── */}
+        <div className="flex flex-col gap-2.5 pointer-events-auto">
+
+          {/* Chat messages (left 75%, floating style) */}
+          <div className="h-36 w-3/4 overflow-y-auto no-scrollbar mask-top flex flex-col">
+            <div className="mt-auto space-y-1.5">
+              {chatStore.messages.map((msg) => {
+                const isSystem = msg.type === 'system' || msg.nickname === '系统';
+                return (
+                  <div
+                    key={msg.id}
+                    className={`chat-slide-in text-[13px] w-max max-w-full rounded-xl px-3 py-1.5 backdrop-blur-sm break-words ${
+                      isSystem
+                        ? 'bg-black/40 border border-brand/30'
+                        : msg.isMe
+                          ? 'bg-black/30 border border-blue-400/20'
+                          : 'bg-black/20 border border-white/5'
+                    }`}
+                  >
+                    {isSystem ? (
+                      <>
+                        <span className="text-brand font-semibold">{msg.nickname}: </span>
+                        <span className="text-rose-100">{msg.message}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`font-medium ${msg.isMe ? 'text-blue-300' : 'text-gray-300'}`}>{msg.nickname}: </span>
+                        <span className="text-white">{msg.message}</span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              <div ref={chatEndRef} />
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Price & Countdown Glass Card */}
-      <div className="px-4 py-4">
-        <div className="backdrop-blur-md bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-5 shadow-lg shadow-black/20 text-center flex flex-col items-center justify-center space-y-4">
-          {auction.mode === 'BLIND' && isActive ? (
-            <div>
-              <div className="text-zinc-500 text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                <span>盲拍进行中</span>
-              </div>
-              <div className="text-2xl font-bold tracking-tight text-amber-400 mt-1">
-                已有 {auction.bidCount} 人出价
-              </div>
-            </div>
-          ) : (
-            <div>
-              <div className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">
-                {isEnded ? '本场成交价' : '当前最高出价'}
-              </div>
-              <div className="text-3xl font-extrabold tracking-tight mt-1.5 tabular-nums bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500 bg-clip-text text-transparent drop-shadow-sm">
-                ¥{auction.currentPrice.toLocaleString()}
-              </div>
-            </div>
-          )}
+          {/* Auction card */}
+          {hasAuction && (
+            <div className="bg-black/50 backdrop-blur-xl border border-amber-500/30 rounded-2xl p-3 relative overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+              <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/10 via-transparent to-brand/10 pointer-events-none" />
 
-          {isActive && <CountdownTimer endTime={auction.endTime} />}
+              {isActive && (
+                <div className="absolute -top-0 -left-0 bg-gradient-to-r from-brand to-red-500 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-10">
+                  <span className="w-1.5 h-1.5 bg-white rounded-full inline-block animate-pulse mr-0.5 align-middle" />
+                  {' '}正在竞拍
+                </div>
+              )}
 
-          {auction.extendCount > 0 && isActive && (
-            <div className="flex items-center gap-1.5 text-xs text-amber-400/90 font-medium bg-amber-500/5 px-2.5 py-1 rounded-lg border border-amber-500/10">
-              <History className="w-3.5 h-3.5" />
-              <span>已延时 {auction.extendCount}/{auction.maxExtendCount} 次</span>
-            </div>
-          )}
-        </div>
-      </div>
+              <div className="flex gap-3 relative z-10">
+                <button
+                  type="button"
+                  onClick={() => auction.product?.id && setSelectedProductId(auction.product.id)}
+                  className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0 border border-white/20 active:opacity-80"
+                >
+                  {productImage ? (
+                    <img className="w-full h-full object-cover" src={productImage} alt="" />
+                  ) : (
+                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
+                      <Gavel className="w-6 h-6 text-zinc-600" />
+                    </div>
+                  )}
+                </button>
 
-      {/* 实时动态常驻横幅 (Ticker Banner) */}
-      {isActive && (
-        <div className="mx-4 mb-2">
-          <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-brand/10 via-orange-500/5 to-transparent border border-brand/10 rounded-xl">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-300 truncate">
-              <Flame className="w-3.5 h-3.5 text-brand animate-pulse shrink-0" />
-              {bid.ranking.length > 0 ? (
-                auction.mode === 'BLIND' ? (
-                  <span>🔒 盲拍激烈竞争中，已有 {auction.bidCount} 人出价！</span>
-                ) : (
-                  <span className="truncate">
-                    🏆 领先者：<span className="text-brand font-bold">{bid.ranking[0].alias}</span> 暂以 <span className="text-amber-400 tabular-nums">¥{bid.ranking[0].amount?.toLocaleString()}</span> 领先！
-                  </span>
-                )
-              ) : (
-                <span>🔨 竞拍进行中，首位出价虚位以待！</span>
+                <div className="flex-1 flex flex-col justify-between pt-0.5 min-w-0">
+                  <div>
+                    <h3 className="font-bold text-sm text-white line-clamp-1">
+                      {auction.product?.title || '竞拍商品'}
+                    </h3>
+                    <div className="text-xs text-amber-200/80 mt-0.5">
+                      起拍: ¥{(auction.auction?.startingPrice ?? 0).toLocaleString()} | 加价: ¥{increment.toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-end mt-1">
+                    <div className="flex flex-col min-w-0">
+                      {auction.mode === 'BLIND' && isActive ? (
+                        <span className="text-[10px] text-gray-300">
+                          🔒 已有 <span className="text-amber-400 font-bold">{auction.bidCount}</span> 人出价
+                        </span>
+                      ) : (
+                        <>
+                          <span className="text-[10px] text-gray-300 -mb-0.5 truncate">
+                            当前最高{' '}
+                            <span className="text-amber-400 font-bold">
+                              {bid.ranking[0] ? `(@${bid.ranking[0].alias})` : '(@等待出价)'}
+                            </span>
+                          </span>
+                          <div className="text-brand font-extrabold text-2xl tracking-tighter flex items-baseline drop-shadow-md">
+                            <span className="text-sm mr-0.5">¥</span>
+                            <span>{auction.currentPrice.toLocaleString()}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div className="shrink-0">
+                      {isActive ? (
+                        <CountdownTimer endTime={auction.endTime} compact />
+                      ) : isEnded ? (
+                        <span className="text-xs text-zinc-400 bg-zinc-800/60 px-2 py-1 rounded-md font-mono">已落锤</span>
+                      ) : (
+                        <span className="text-xs text-amber-400 bg-brand/20 border border-brand/50 px-2 py-1 rounded-md font-mono font-bold">
+                          <Clock className="w-3 h-3 inline mr-0.5" />等待
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick bid buttons */}
+              {isActive && (
+                <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-white/10 relative z-10">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickBid(1)}
+                    disabled={quickCooldown || bid.bidPending}
+                    className="bg-gradient-to-b from-white/10 to-white/5 hover:from-white/20 active:scale-95 text-white rounded-xl py-2 text-sm font-bold border border-white/10 transition-all disabled:opacity-40"
+                  >
+                    +{increment.toLocaleString()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickBid(5)}
+                    disabled={quickCooldown || bid.bidPending}
+                    className="bg-gradient-to-b from-white/10 to-white/5 hover:from-amber-500/20 active:scale-95 text-amber-400 rounded-xl py-2 text-sm font-bold border border-amber-500/30 transition-all disabled:opacity-40"
+                  >
+                    +{(increment * 5).toLocaleString()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickBid(10)}
+                    disabled={quickCooldown || bid.bidPending}
+                    className="bg-gradient-to-b from-orange-500/20 to-orange-500/5 hover:from-orange-500/40 active:scale-95 text-orange-400 rounded-xl py-2 text-sm font-bold border border-orange-500/50 transition-all shadow-[0_0_10px_rgba(249,115,22,0.2)] disabled:opacity-40"
+                  >
+                    +{(increment * 10).toLocaleString()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBidPanelExpanded(true)}
+                    className="bg-gradient-to-r from-brand to-orange-500 hover:from-brand-dark text-white rounded-xl py-2 text-sm font-bold active:scale-95 transition-all shadow-lg"
+                  >
+                    出价
+                  </button>
+                </div>
+              )}
+
+              {auction.extendCount > 0 && isActive && (
+                <div className="mt-2 text-center text-[10px] text-amber-400/80 relative z-10">
+                  延时 {auction.extendCount}/{auction.maxExtendCount} 次
+                </div>
               )}
             </div>
-            {bid.myRank && (
-              <span className="shrink-0 ml-2 text-[10px] font-bold text-brand bg-brand/5 px-2 py-0.5 rounded-md border border-brand/15">
-                第 {bid.myRank} 名
-              </span>
+          )}
+
+          {/* Bottom bar: chat input + action buttons */}
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSendChat(); }}
+                maxLength={100}
+                placeholder="凑个热闹..."
+                className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-full py-2.5 px-4 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-brand/50 transition"
+              />
+              <button
+                type="button"
+                onClick={handleSendChat}
+                disabled={!chatInput.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-brand disabled:opacity-30"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+
+            {auction.depositRequired && !auction.hasDeposit && !isEnded && (
+              <button
+                type="button"
+                onClick={() => setDepositDrawerOpen(true)}
+                className="w-10 h-10 shrink-0 rounded-full bg-amber-500/20 backdrop-blur-md border border-amber-500/30 flex items-center justify-center active:scale-90 transition-transform"
+                title="参拍保证金"
+              >
+                <WalletCards className="w-4 h-4 text-amber-400" />
+              </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => setShowShowcase(true)}
+              className="w-10 h-10 shrink-0 rounded-full bg-purple-500/20 backdrop-blur-md border border-purple-500/30 flex items-center justify-center active:scale-90 transition-transform"
+              title="拍品柜"
+            >
+              <Sparkles className="w-4 h-4 text-purple-400" />
+            </button>
           </div>
         </div>
-      )}
-
-      {/* 页签选择栏 (Tab Navigation) */}
-      <div className="flex px-4 border-b border-zinc-900/60 bg-zinc-950/20 shrink-0">
-        <button
-          type="button"
-          title="切换到互动聊天"
-          onClick={() => setActiveTab('chat')}
-          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition duration-200 ${
-            activeTab === 'chat'
-              ? 'border-brand text-brand'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          <span>互动聊天 ({chatStore.messages.length})</span>
-        </button>
-        <button
-          type="button"
-          title="切换到竞拍排行"
-          onClick={() => setActiveTab('rank')}
-          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 border-b-2 transition duration-200 ${
-            activeTab === 'rank'
-              ? 'border-brand text-brand'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          <Trophy className="w-3.5 h-3.5" />
-          <span>竞拍排行 ({bid.ranking.length})</span>
-        </button>
       </div>
 
-      {/* 滑动内容区 (Main Content) */}
-      <div className="flex-1 overflow-hidden px-4 py-2 flex flex-col min-h-[220px]">
-        {activeTab === 'chat' ? (
-          <ChatList messages={chatStore.messages} />
-        ) : (
-          <div className="flex-1 overflow-y-auto py-1">
-            <RankingList ranking={bid.ranking} />
-          </div>
-        )}
-      </div>
-
-      {/* 弹幕输入发送条 (常驻或浮动在出价底栏之上) */}
-      {activeTab === 'chat' && (
-        <div className={`px-4 py-2.5 bg-zinc-950/90 border-t border-zinc-900 flex items-center gap-2 shrink-0 ${!isActive ? 'pb-6' : ''}`}>
-          <input
-            type="text"
-            placeholder="聊点什么吧，理性发言..."
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSendChat();
-            }}
-            maxLength={100}
-            className="flex-1 px-4 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/80 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand/50 focus:ring-1 focus:ring-brand/20 transition duration-200"
-          />
-          <button
-            type="button"
-            title="发送聊天消息"
-            onClick={handleSendChat}
-            disabled={!chatInput.trim()}
-            className="p-2 rounded-xl bg-brand/10 hover:bg-brand/20 disabled:opacity-40 text-brand transition duration-150 flex items-center justify-center shrink-0"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Bid controller (fixed bottom) */}
+      {/* ═══ Overlays ═══ */}
       {wsRef.current && (
         <BidController
           ws={wsRef.current}
@@ -336,7 +402,6 @@ export default function AuctionRoomPage() {
           setSelectedProductId(productId);
         }}
         onFocusBid={() => {
-          setActiveTab('rank');
           setBidPanelExpanded(true);
         }}
       />

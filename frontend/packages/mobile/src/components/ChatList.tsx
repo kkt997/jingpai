@@ -15,7 +15,8 @@ export default function ChatList({ messages }: Props) {
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto space-y-3 px-1 py-2 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+    <div className="flex-1 overflow-y-auto flex flex-col scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+      <div className="mt-auto space-y-2 py-1">
       {messages.map((msg) => {
         const isSystem = msg.type === 'system' || msg.nickname === '系统';
         
@@ -23,7 +24,7 @@ export default function ChatList({ messages }: Props) {
           return (
             <div
               key={msg.id}
-              className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/10 rounded-xl px-3 py-2 text-xs text-amber-400/90 leading-relaxed animate-fade-in"
+              className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/10 rounded-lg px-2.5 py-1.5 text-[11px] text-amber-400/90 leading-relaxed"
             >
               <Bell className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
               <div>
@@ -51,9 +52,9 @@ export default function ChatList({ messages }: Props) {
               )}
             </div>
             <div
-              className={`rounded-2xl px-3.5 py-2 text-sm leading-snug break-words ${
+              className={`rounded-2xl px-3 py-1.5 text-xs leading-snug break-words ${
                 msg.isMe
-                  ? 'bg-gradient-to-br from-brand/90 to-orange-500/90 text-white rounded-tr-none shadow-md shadow-brand/10'
+                  ? 'bg-gradient-to-br from-brand/90 to-orange-500/90 text-white rounded-tr-none shadow-sm shadow-brand/10'
                   : 'bg-zinc-900/60 border border-zinc-800/80 text-zinc-200 rounded-tl-none'
               }`}
             >
@@ -63,6 +64,7 @@ export default function ChatList({ messages }: Props) {
         );
       })}
       <div ref={bottomRef} />
+      </div>
     </div>
   );
 }
