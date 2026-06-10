@@ -1,197 +1,417 @@
-1. 🎯 课题名称
-
-「实时竞拍⼤师」——抖⾳电商直播竞拍全栈系统设计与实现
-
-1. 💡 课题背景
-
-✨ 想象这样⼀个场景：直播间⾥，⼀件稀世珠宝正在竞拍，数百⼈同时出价，价格每秒都在跳
-
-动，⽓氛紧张到窒息——这就是我们要你构建的系统！
-
-直播电商的兴起为⾼价值商品（珠宝、艺术品、⼆⼿奢侈品）开辟了全新赛道，这些商品价值难以统⼀定价，竞拍这种充满互动和竞争感的形式，能让市场动态定价最⼤化商品价值。你的任务是：
-
-•前端：基于 React + TypeScript + WebSocket 打造流畅的交互体验
-
-•后端：优先Node/Go（其他语⾔也不限制）+ MySQL/Redis 构建⾼并发处理能⼒
-
-•全流程：实现「商品上架 → 规则配置 → 实时出价 → 动态排名 → 竞拍成交」的完整闭环
-
-1. 🔥 核⼼挑战
-
-挑战⼀：复杂规则的逻辑攻坚
-
-竞拍规则就像⼀张精密的⽹，你需要把以下规则零漏洞地实现出来：
-
-•🔹 0 元起拍——从 0 开始，任何⼈都能参与
-
-•🔹 加价幅度——每次出价必须按固定幅度递增
-
-•🔹 封顶价——达到上限⾃动成交
-
-•🔹 ⾃动延时——结束前有⼈出价，时间⾃动延⻓ 10-30 秒
-
-•🔹 异常取消——主播可随时取消异常竞拍
-
-挑战⼆：毫秒级实时同步
-
-想象⼀下：直播间⾥有 100+ ⼈同时狂点出价按钮，每个⼈都想在最后⼀秒绝杀。你需要确保：
-
-•✅ 出价数据秒级同步，所有⼈看到的排名⼀致
-
-•✅ 倒计时精确到毫秒，不能有任何偏差
-
-•✅ WebSocket 连接稳定，即使⽹络波动也能⾃动重连
-
-•❌ 不能出现数据延迟、⻚⾯卡顿、排名错乱
-
-技术关键词：WebSocket ⻓连接、⼼跳保活、乐观锁、防抖节流
-
-1. 📋 项⽬要求
-
-📚 完成这个课题，你将收获什么？
-
-✅ 掌握 WebSocket 实时通信的完整实践
-
-✅ 理解⾼并发场景下的数据⼀致性解决⽅案
-
-✅ 学会状态机设计和复杂业务规则的代码实现
-
-✅ 积累全栈项⽬经验，从数据库设计到前端交互⼀⼿包办🏗 技术架构
-
-•前端：React + TypeScript，组件化开发，状态管理清晰
-
-•后端：Node.js 或 Go（语⾔不限），RESTful API + WebSocket 双通道
-
-•数据库：MySQL / PostgreSQL 存储核⼼业务数据，Redis 应对⾼频读写
-
-•实时通信：WebSocket ⻓连接，⽀持房间级隔离，多直播间互不⼲扰
-
-•代码质量：分层架构合理，注释清晰，具备可维护性和扩展性
-
-🎨 功能模块
-
-商家/主播端（PC 管理后台）
-
-•📦 竞拍发布：上传商品（名称、图⽚、介绍），配置竞拍规则（起拍价、加价幅度、时⻓、封顶价、延时机制）
-
-•📊 商品管理：查看所有竞拍商品的状态、进度、成交结果；⽀持修改未开始竞拍的规则，取消异常竞拍
-
-•🧾 订单管理：成交后⾃动⽣成订单，查看成交详情
-
-⽤⼾端（移动端 H5/⼩程序）
-
-•📺 直播间：可⽤固定视频或开源库模拟直播画⾯
-
-•👀 竞拍浏览：查看商品列表、详情、规则、当前出价、参与⼈数，接收出价提醒
-
-•💰 出价参与：⼿动出价、实时查看排名，接收「被超越」「竞拍延时」「竞拍结束」等关键提醒
-
-•🏆 结果查看：查看成交情况，模拟⽀付流程，浏览历史竞拍记录
-
-5. 🏅 评分亮点（加分项）
-
-想要在众多项⽬中脱颖⽽出？看看这些加分⽅向：
-
-🤖 AI 全栈⼯具的深度应⽤
-
-•如何⾼效使⽤ AI 辅助编码？你的 AI ⼯具使⽤思路和流程沉淀
-
-•AI 代码贡献率的合理性评估（不是越⾼越好，关键在于关键决策点的⼈⼯把控）
-
-💫 极致的竞价氛围体验
-
-•动画效果：出价领先时「🎉 领先！」、被超越时「⚡ 被超越！」的情绪反馈
-
-•实时排⾏榜：让⽤⼾⼀眼看到⾃⼰的位置和差距•
-
-紧张感营造：倒计时动画、出价提⽰⾳等细节打磨
-
-⚡ ⾼并发架构的硬核优化
-
-•Redis 分层缓存策略，读写分离
-
-•分布式锁解决出价幂等性，绝对不允许⼀笔出价扣两次钱
-
-•WebSocket 房间级路由隔离，⽀持单直播间 1000+ ⽤⼾同时在线（超越基础要求 10 倍！）
-
-💡 导师提⽰：不必追求全部满分，选择你最有兴趣的⽅向深⼊打磨，把⼀个亮点做到极致，胜
-
-过⼗个浅尝辄⽌的功能！
-
-1. 评分标准
-
-评分维度
-
-考察要点
-
-建议权重
-
-技术实现与⼯程完整
-
-度
-
-• 完整⼯程链路：从竞拍数据采集（出价、⽤⼾⾏为）、数
-
-据治理，到开源模型调⽤（可选）、后端服务（出价校验、
-
-状态机管控）、接⼝⽹关，再到前端交互（氛围动画、实时
-
-反馈），链路的顺畅闭环度。
-
-• 系统可⽤性（断连重连、异常兜底）、性能、稳定性（缓
-
-存防击穿、数据⼀致性）、可观测性（竞拍状态监控、异常
-
-告警）。
-
-50%
-
-技术深度与创新性
-
-• 技术选型
-
-（React/TypeScript/WebSocket/Node/Go/Redis/MySQL
-
-等）与课题场景（⾼并发直播竞拍）的适配性，是否针对核
-
-⼼挑战（实时同步、⾼并发、WebSocket不稳定）做针对性
-
-优化。
-
-• 是否在技术⽅案上有独特或前瞻性思考（如房间级
-
-WebSocket路由隔离、出价幂等性设计、跨端状态同步优化
-
-等），能否体现技术差异化优势。
-
-25%
-
-AI使⽤与落地效果
-
-• AI⼯具使⽤情况：是否合理使⽤AI⼯具（代码⽣成⼯
-
-具、开源模型调⽤⼯具、数据处理⼯具等），⼯具选择与课
-
-题需求的适配性，使⽤流程是否规范、可追溯。
-
-• AI代码贡献率：AI⽣成代码占项⽬核⼼代码（前后端业务
-
-逻辑、模型调⽤、交互组件）的⽐例，⽣成代码是否规范、
-
-可复⽤。
-
-15%
-
-项⽬材料完整度
-
-• 提交的⽅案⽂档、演⽰视频（双端功能演⽰、⾼并发场景
-
-测试）、代码库等材料是否完整、规范，⽆缺失关键内容？
-
-• ⽅案阐述是否清晰、有条理，能明确体现核⼼挑战、技术
-
-⽅案、评判亮点；演⽰效果是否直观，能清晰展⽰全流程功
-
-能与技术优势？
-
-10%
+# 实时竞拍大师
+
+抖音电商直播竞拍全栈系统 — 支持商家在直播间内对高价值商品发起实时竞拍，用户通过 H5 页面参与出价。
+
+## 项目简介
+
+本系统面向珠宝、艺术品、二手奢侈品等高价值商品的直播竞拍场景，实现了「商品上架 → 规则配置 → 实时出价 → 动态排名 → 竞拍成交」的完整闭环。
+
+### 核心能力
+
+- **高并发出价**：Redis Lua 原子脚本 + 五层漏斗（内存预校验 → 去重 → 限流 → Lua 原子出价 → 异步持久化），实测 **1,357 QPS**，万级出价零错误
+- **毫秒级实时同步**：WebSocket 房间级隔离，NTP 风格时钟校准，倒计时 `requestAnimationFrame` 60fps 渲染
+- **明拍 / 盲拍双模式**：明拍公开全部出价，盲拍隐藏金额仅显示排名，结束后揭晓
+- **智能延时衰减**：结束前出价自动延时，衰减策略防止无限拖延（30s → 25s → ... → 5s）
+- **竞拍状态机**：6 状态 3 终态，事件驱动转移，副作用自动触发（Timer / Redis / 广播）
+- **全链路可观测**：Prometheus 20+ 自定义指标，覆盖 HTTP / WebSocket / Bid / Redis 全链路
+
+## 系统架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          客户端 (Client)                             │
+│                                                                     │
+│   ┌──────────────────────┐      ┌──────────────────────┐           │
+│   │   用户端 H5 (:3000)   │      │  商家端 PC (:3001)    │           │
+│   │  React 19 + TS       │      │  React 19 + TS       │           │
+│   │  TailwindCSS         │      │  TailwindCSS         │           │
+│   │  Framer Motion       │      │                      │           │
+│   │  Zustand 状态管理     │      │  Zustand 状态管理     │           │
+│   └──────┬───────┬───────┘      └──────┬───────┬───────┘           │
+│          │       │                     │       │                    │
+│       HTTP    WebSocket             HTTP    WebSocket               │
+└──────────┼───────┼─────────────────────┼───────┼────────────────────┘
+           │       │                     │       │
+           ▼       ▼                     ▼       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Nginx 反向代理 (:8888)                          │
+│          /api/* /uploads/* → Backend    /ws → WebSocket              │
+│          /           → Mobile SPA       /merchant/ → Merchant SPA   │
+└──────────────────────────┬──────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     后端服务 Go / Gin (:8080)                        │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                     中间件层 (Middleware)                      │   │
+│  │   CORS │ JWT 鉴权 │ API 限流 (200/10s) │ Prometheus 指标     │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────┐  ┌────────────────────────────────┐   │
+│  │    HTTP Handler 层       │  │     WebSocket 层                │   │
+│  │                         │  │                                │   │
+│  │  auth     (注册/登录)    │  │  Hub  ── 中枢消息分发           │   │
+│  │  product  (商品 CRUD)    │  │   ├── Room 1 (房间级隔离)      │   │
+│  │  room     (直播间管理)   │  │   │    ├── Client A            │   │
+│  │  auction  (竞拍管理)     │  │   │    ├── Client B            │   │
+│  │  order    (订单/支付)    │  │   │    └── ...                  │   │
+│  │  deposit  (保证金)       │  │   ├── Room 2                   │   │
+│  │  follow   (关注)         │  │   │    └── ...                  │   │
+│  │  conversation (私信)     │  │   └── ...                      │   │
+│  │  upload   (文件上传)     │  │                                │   │
+│  └────────────┬────────────┘  └───────────────┬────────────────┘   │
+│               │                               │                    │
+│               ▼                               ▼                    │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                    Service 业务逻辑层                          │   │
+│  │                                                              │   │
+│  │  BidService          五层出价漏斗 + Redis Lua 原子出价        │   │
+│  │  AuctionFSM          竞拍状态机 (6状态, 事件驱动)             │   │
+│  │  AuctionTimer        倒计时管理 + 到期自动结算                │   │
+│  │  BroadcastService    明拍/盲拍消息过滤 + 房间广播             │   │
+│  │  AliasService        虚拟昵称分配 (隐私保护)                  │   │
+│  │  OrderService        订单生成 + 超时取消                      │   │
+│  │  DepositService      保证金冻结/退还                          │   │
+│  └──────────────────────────┬───────────────────────────────────┘   │
+│                             │                                      │
+│  ┌──────────────────────────▼───────────────────────────────────┐   │
+│  │                    Model 数据模型层 (GORM)                     │   │
+│  │                                                              │   │
+│  │  User │ Product │ LiveRoom │ Auction │ Bid │ Order           │   │
+│  │  Deposit │ Follow │ Conversation │ Message                   │   │
+│  └──────────────────────────┬───────────────────────────────────┘   │
+│                             │                                      │
+└─────────────────────────────┼──────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+┌──────────────────┐ ┌───────────────┐ ┌─────────────────┐
+│   MySQL 8.0      │ │  Redis 7      │ │  Prometheus      │
+│   (:3306)        │ │  (:6379)      │ │  (:9090)         │
+│                  │ │               │ │                  │
+│  核心业务数据     │ │  竞拍实时状态  │ │  性能指标采集     │
+│  持久化存储       │ │  出价排行榜    │ │  HTTP/WS/Bid     │
+│  事务保障         │ │  分布式限流    │ │  Redis 延迟       │
+│  11 张业务表      │ │  Lua 原子出价  │ │  15s 采集间隔     │
+│                  │ │  虚拟昵称映射  │ │                  │
+└──────────────────┘ └───────────────┘ └─────────────────┘
+```
+
+### 出价数据流
+
+```
+用户点击出价
+    │
+    ▼
+┌─ WebSocket Client ──────────────────────────────────────────┐
+│  { type: "bid", seq: 5, payload: { auctionId, amount } }   │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+    ┌──────────────────────▼──────────────────────┐
+    │         五层出价漏斗 (BidService)             │
+    │                                              │
+    │  L1  内存预校验  ── 本地缓存过滤无效出价       │
+    │  L2  去重 (500ms) ── 防手抖连击               │
+    │  L3  Redis 限流  ── 每人每秒 1 次             │
+    │  L4  Lua 原子出价 ── 校验+更新+延时 一次调用   │
+    │  L5  异步持久化  ── 批量写入 MySQL             │
+    └──────────────────────┬──────────────────────┘
+                           │
+    ┌──────────────────────▼──────────────────────┐
+    │       BroadcastService 广播                   │
+    │  明拍: 全员相同消息 (单次序列化)               │
+    │  盲拍: 逐用户定制 (isMe 带金额, 其余隐藏)     │
+    └──────────────────────┬──────────────────────┘
+                           │
+                           ▼
+              所有房间内用户收到实时更新
+```
+
+## 技术选型
+
+| 层级 | 技术 | 选型理由 |
+|------|------|---------|
+| 前端框架 | React 19 + TypeScript | 组件化开发，类型安全 |
+| 前端构建 | Vite 6 | 毫秒级 HMR |
+| 前端样式 | TailwindCSS 3 | 原子化 CSS |
+| 前端动画 | Framer Motion | 竞拍氛围动画 |
+| 状态管理 | Zustand 5 | 轻量级，天然支持 WS 外部更新 |
+| Monorepo | pnpm workspace | shared / mobile / merchant 三包架构 |
+| 后端语言 | Go 1.22+ | Goroutine 天然适配万级 WS 长连接 |
+| Web 框架 | Gin | 高性能 HTTP 路由 |
+| ORM | GORM | AutoMigrate 自动建表 |
+| 数据库 | MySQL 8.0 | 核心业务数据持久化 |
+| 缓存 | Redis 7 | 出价引擎 / 排行榜 / 限流 |
+| WebSocket | gorilla/websocket | Go 生态最成熟的 WS 库 |
+| 鉴权 | JWT (golang-jwt) | 无状态认证 |
+| 监控 | Prometheus | 全链路指标采集 |
+| 容器化 | Docker Compose | 一键启动全部服务 |
+
+## 依赖环境
+
+| 依赖 | 最低版本 | 说明 |
+|------|---------|------|
+| Docker & Docker Compose | 20.10+ / v2 | 容器化运行 MySQL / Redis / 后端 / 前端 |
+| Go | 1.22+ | 本地开发后端时需要 |
+| Node.js | 18+ | 本地开发前端时需要 |
+| pnpm | 8+ | 前端包管理器 |
+
+> 如果仅做 Docker 部署，只需安装 Docker 即可，无需本地安装 Go / Node.js。
+
+## 快速启动
+
+### 方式一：Docker Compose 一键部署（推荐）
+
+```bash
+# 克隆项目
+git clone https://github.com/kkt997/jingpai.git
+cd jingpai
+
+# 构建并启动所有服务
+docker compose up -d --build
+
+# 查看服务状态
+docker ps
+```
+
+启动后访问：
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| 用户端 H5 | http://localhost:8888 | 移动端竞拍页面 |
+| 商家端 PC | http://localhost:8888/merchant/ | 商家管理后台 |
+| 后端 API | http://localhost:8080 | RESTful API + WebSocket |
+| Prometheus | http://localhost:9090 | 监控面板 |
+
+### 方式二：本地开发模式
+
+```bash
+# 1. 启动 MySQL + Redis
+docker compose up -d mysql redis
+
+# 2. 启动后端 (:8080)
+cd backend
+go run cmd/server/main.go
+
+# 3. 启动用户端 (:3000)
+cd frontend
+pnpm install
+pnpm dev:mobile
+
+# 4. 启动商家端 (:3001)（另开终端）
+cd frontend
+pnpm dev:merchant
+```
+
+### 并发压测
+
+```bash
+cd backend
+
+# 快速冒烟测试
+go run cmd/loadtest/main.go -users 10 -bids 5
+
+# 高负载压测
+go run cmd/loadtest/main.go -users 1000 -bids 15 -rampup 20000
+
+# 极限压测
+go run cmd/loadtest/main.go -users 10000 -bids 5 -rampup 90000
+```
+
+详细压测结果见 [并发测压.md](并发测压.md)。
+
+## 目录结构
+
+```
+jingpai/
+├── docker-compose.yml          # 容器编排：MySQL + Redis + 后端 + 前端 + Prometheus
+├── prometheus.yml              # Prometheus 采集配置
+├── readme.md                   # 项目说明（本文件）
+├── AGENTS.md                   # 技术设计文档
+├── 并发测压.md                  # 并发压测报告（10~10000 用户）
+│
+├── backend/                    # Go 后端
+│   ├── cmd/
+│   │   ├── server/main.go      # 服务入口：初始化、路由注册、优雅关闭
+│   │   └── loadtest/main.go    # 并发压测工具
+│   ├── config.yaml             # 运行时配置
+│   ├── Dockerfile              # 后端容器构建
+│   ├── go.mod / go.sum
+│   ├── scripts/lua/bid.lua     # Redis Lua 原子出价脚本
+│   └── internal/
+│       ├── config/             # 配置加载 (Viper)
+│       ├── handler/            # HTTP Handler + WebSocket 升级
+│       │   ├── router.go       #   三层路由：public / auth / merchant
+│       │   ├── auth.go         #   注册、登录
+│       │   ├── auction.go      #   竞拍管理（创建/开始/取消）
+│       │   ├── product.go      #   商品 CRUD
+│       │   ├── room.go         #   直播间管理
+│       │   ├── order.go        #   订单查看/支付
+│       │   ├── deposit.go      #   保证金
+│       │   ├── websocket.go    #   WS 连接升级 + 连接数守卫
+│       │   └── ws_handler.go   #   WS 消息分发（bid/join/leave/chat）
+│       ├── service/            # 业务逻辑
+│       │   ├── bid.go          #   五层出价漏斗 + Redis Lua 原子出价
+│       │   ├── auction_fsm.go  #   竞拍状态机
+│       │   ├── timer.go        #   倒计时管理 + 到期结算
+│       │   ├── broadcast.go    #   明拍/盲拍广播过滤
+│       │   ├── alias.go        #   虚拟昵称分配
+│       │   ├── order.go        #   订单生成 + 超时取消
+│       │   ├── deposit.go      #   保证金冻结/退还
+│       │   └── context.go      #   竞拍上下文、DTO 定义
+│       ├── model/              # GORM 数据模型（11 张表）
+│       ├── middleware/         # 中间件：JWT鉴权 / CORS / 限流 / Prometheus
+│       ├── metrics/            # Prometheus 自定义指标（20+）
+│       ├── ws/                 # WebSocket 核心
+│       │   ├── hub.go          #   中枢：注册/注销/消息分发
+│       │   ├── room.go         #   房间：广播/定向发送
+│       │   ├── client.go       #   客户端：读写泵、心跳
+│       │   └── message.go      #   消息类型 + Payload 定义
+│       └── pkg/                # 工具包
+│           ├── errcode/        #   错误码定义
+│           └── response/       #   统一 JSON 响应
+│
+└── frontend/                   # React 前端 (pnpm monorepo)
+    ├── pnpm-workspace.yaml     # workspace 配置
+    ├── Dockerfile              # 前端容器构建（Nginx）
+    ├── nginx.conf              # Nginx 路由配置
+    └── packages/
+        ├── shared/             # 共享层
+        │   └── src/
+        │       ├── api/        #   Axios HTTP 客户端
+        │       ├── types/      #   TypeScript 类型定义
+        │       └── ws/         #   WebSocket 客户端 + 时间校准
+        ├── mobile/             # 用户端 H5 (:3000)
+        │   └── src/
+        │       ├── pages/      #   页面：竞拍房间/订单/个人中心/...
+        │       ├── components/ #   组件：倒计时/排行榜/出价控制器/...
+        │       ├── stores/     #   Zustand Store（7个）
+        │       └── ws/         #   WS 消息分发器
+        └── merchant/           # 商家端 PC (:3001)
+            └── src/
+                ├── pages/      #   页面：仪表盘/商品/直播/竞拍/订单/...
+                └── components/ #   布局组件
+```
+
+## 配置说明
+
+### 后端配置 (`backend/config.yaml`)
+
+```yaml
+server:
+  port: 8080                    # 服务端口
+  mode: debug                   # debug（开发）/ release（生产）
+
+database:
+  host: 127.0.0.1               # MySQL 地址
+  port: 3306
+  user: root
+  password: jingpai123
+  dbname: jingpai
+  max_open_conns: 100           # 最大连接数
+  max_idle_conns: 20            # 最大空闲连接
+
+redis:
+  addr: 127.0.0.1:6379          # Redis 地址
+  password: ""
+  db: 0
+  pool_size: 100                # 连接池大小（高并发建议 200-500）
+
+jwt:
+  secret: jingpai-secret-key    # JWT 签名密钥（生产环境务必修改）
+  expire_hours: 72              # Token 过期时间
+
+auction:
+  default_extend_seconds: 20    # 默认延时秒数
+  min_extend_seconds: 5         # 最小延时（衰减下限）
+  max_extend_count: 10          # 最大延时次数
+  decay_per_extend: 5           # 每次延时衰减秒数
+  default_deposit_amount: 500   # 默认保证金金额
+
+websocket:
+  max_connections_per_user: 3   # 同用户最大 WS 连接数
+  heartbeat_interval: 15        # 心跳间隔（秒）
+  heartbeat_timeout: 45         # 超时断连（秒）
+  countdown_sync_interval: 5    # 倒计时校准间隔（秒）
+```
+
+### Docker Compose 环境变量
+
+Docker 部署时通过环境变量覆盖配置：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `DATABASE_HOST` | `mysql` | MySQL 地址 |
+| `DATABASE_PORT` | `3306` | MySQL 端口 |
+| `DATABASE_USER` | `root` | MySQL 用户名 |
+| `DATABASE_PASSWORD` | `jingpai123` | MySQL 密码 |
+| `DATABASE_DBNAME` | `jingpai` | 数据库名 |
+| `REDIS_ADDR` | `redis:6379` | Redis 地址 |
+| `SERVER_MODE` | `release` | 运行模式 |
+| `JWT_SECRET` | — | JWT 密钥（生产必须修改） |
+
+### Prometheus 配置 (`prometheus.yml`)
+
+```yaml
+scrape_configs:
+  - job_name: "jingpai-backend"
+    metrics_path: /metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["backend:8080"]
+```
+
+## API 路由概览
+
+### 公开接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/register` | 用户注册 |
+| POST | `/api/auth/login` | 登录 |
+
+### 认证接口（需 JWT）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/user/profile` | 个人信息 |
+| GET | `/api/rooms` | 直播间列表 |
+| GET | `/api/rooms/:id` | 直播间详情 |
+| GET | `/api/auctions` | 竞拍列表 |
+| GET | `/api/auctions/:id` | 竞拍详情 |
+| GET | `/api/orders` | 我的订单 |
+| POST | `/api/orders/:id/pay` | 模拟支付 |
+| POST | `/api/auctions/:id/deposit` | 缴纳保证金 |
+| GET | `/ws` | WebSocket 连接 |
+
+### 商家接口（需 JWT + MERCHANT 角色）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/merchant/products` | 创建商品 |
+| GET | `/api/merchant/products` | 商品列表 |
+| PUT | `/api/merchant/products/:id` | 更新商品 |
+| POST | `/api/merchant/rooms` | 创建直播间 |
+| PUT | `/api/merchant/rooms/:id/start` | 开播 |
+| POST | `/api/merchant/auctions` | 创建竞拍 |
+| PUT | `/api/merchant/auctions/:id/start` | 开始竞拍 |
+| PUT | `/api/merchant/auctions/:id/cancel` | 取消竞拍 |
+| GET | `/api/merchant/stats` | 数据统计 |
+
+> 完整接口文档见 [接口.md](接口.md)。
+
+## 性能数据
+
+基于 Docker Compose 单机部署的并发压测结果（详见 [并发测压.md](并发测压.md)）：
+
+| 并发用户 | QPS | P50 延迟 | P99 延迟 | 异常错误率 |
+|---------|-----|---------|---------|-----------|
+| 100 | 80 | 2.6ms | 19.5ms | 0% |
+| 500 | 398 | 6.7ms | 138.8ms | 0% |
+| 1,000 | 778 | 18.4ms | 446.2ms | 0% |
+| 2,000 | **1,357** | 47.0ms | 1,180.8ms | 0% |
+| 10,000 | 1,203 | 69.4ms | 3,027.2ms | 0% |
+
+- 全部 7 轮（10~10000 用户）共 64,991 次出价，**异常错误率 0%**
+- 2000+ 并发时的连接瓶颈来自 Docker 网络层，而非应用代码
