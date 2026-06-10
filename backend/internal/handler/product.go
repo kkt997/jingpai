@@ -47,6 +47,22 @@ func (h *Handler) ListMerchantProducts(c *gin.Context) {
 	response.OK(c, products)
 }
 
+func (h *Handler) GetProduct(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var product model.Product
+	if err := h.db.First(&product, id).Error; err != nil {
+		response.NotFound(c, "商品不存在")
+		return
+	}
+	if product.Status == model.ProductRemoved {
+		response.NotFound(c, "商品不存在")
+		return
+	}
+
+	response.OK(c, product)
+}
+
 func (h *Handler) UpdateProduct(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	merchantID, _ := c.Get("userID")

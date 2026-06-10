@@ -94,9 +94,18 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	var phone *string
+	if req.Phone != "" {
+		phone = &req.Phone
+	}
+	var email *string
+	if req.Email != "" {
+		email = &req.Email
+	}
+
 	user := model.User{
-		Phone:        req.Phone,
-		Email:        req.Email,
+		Phone:        phone,
+		Email:        email,
 		Nickname:     req.Nickname,
 		PasswordHash: string(hash),
 		Role:         model.UserRole(req.Role),

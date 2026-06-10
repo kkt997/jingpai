@@ -39,6 +39,17 @@ func (h *Handler) CreateRoom(c *gin.Context) {
 	response.OK(c, room)
 }
 
+func (h *Handler) ListMerchantRooms(c *gin.Context) {
+	merchantID, _ := c.Get("userID")
+	var rooms []model.LiveRoom
+	query := h.db.Where("merchant_id = ?", merchantID).Order("created_at DESC")
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	query.Find(&rooms)
+	response.OK(c, rooms)
+}
+
 func (h *Handler) ListRooms(c *gin.Context) {
 	var rooms []model.LiveRoom
 	query := h.db.Order("created_at DESC")

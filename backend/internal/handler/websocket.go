@@ -20,6 +20,8 @@ var upgrader = websocket.Upgrader{
 
 func (h *Handler) HandleWebSocket(c *gin.Context) {
 	userID, _ := c.Get("userID")
+	role, _ := c.Get("role")
+	roleStr, _ := role.(string)
 
 	// Connection guard
 	totalConns := h.hub.CountUserTotal(userID.(uint))
@@ -34,7 +36,7 @@ func (h *Handler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	client := ws.NewClient(h.hub, conn, userID.(uint))
+	client := ws.NewClient(h.hub, conn, userID.(uint), roleStr)
 	h.hub.Register <- client
 
 	go client.WritePump()

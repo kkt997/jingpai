@@ -23,6 +23,7 @@ type MessageHandler interface {
 	OnJoinRoom(client *Client, payload *JoinRoomPayload) error
 	OnLeaveRoom(client *Client, payload *LeaveRoomPayload) error
 	OnBid(client *Client, payload *BidPayload) error
+	OnChat(client *Client, payload *ChatPayload) error
 }
 
 func NewHub() *Hub {
@@ -100,6 +101,21 @@ func (h *Hub) CountUserTotal(userID uint) int {
 	return count
 }
 
+func (h *Hub) SendToUser(userID uint, msg ServerMessage) {
+	h.mu.RLock()
+	clients := make([]*Client, 0)
+	for client := range h.clients {
+		if client.UserID == userID {
+			clients = append(clients, client)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, client := range clients {
+		client.SendMessage(msg)
+	}
+}
+
 func (h *Hub) HandleMessage(client *Client, msg *ClientMessage) {
 	metrics.WsMessagesTotal.WithLabelValues(msg.Type, "inbound").Inc()
 
@@ -139,6 +155,16 @@ func (h *Hub) HandleMessage(client *Client, msg *ClientMessage) {
 		}
 		if h.msgHandler != nil {
 			h.msgHandler.OnBid(client, &payload)
+		}
+
+	case MsgChat:
+		var payload ChatPayload
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: 4010, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
+			return
+		}
+		if h.msgHandler != nil {
+			h.msgHandler.OnChat(client, &payload)
 		}
 
 	case MsgSyncTime:

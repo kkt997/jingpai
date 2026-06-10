@@ -22,17 +22,19 @@ type Client struct {
 	conn   *websocket.Conn
 	send   chan []byte
 	UserID uint
+	Role   string
 	RoomID uint
 	mu     sync.Mutex
 	closed bool
 }
 
-func NewClient(hub *Hub, conn *websocket.Conn, userID uint) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, userID uint, role string) *Client {
 	return &Client{
 		hub:    hub,
 		conn:   conn,
 		send:   make(chan []byte, sendBufSize),
 		UserID: userID,
+		Role:   role,
 	}
 }
 

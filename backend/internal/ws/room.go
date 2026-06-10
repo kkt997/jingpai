@@ -40,6 +40,19 @@ func (r *Room) ClientCount() int {
 	return len(r.clients)
 }
 
+// ViewerCount returns the number of audience connections in the room.
+func (r *Room) ViewerCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for client := range r.clients {
+		if client.Role != "MERCHANT" {
+			count++
+		}
+	}
+	return count
+}
+
 // Broadcast 向房间内所有人发送相同消息（明拍模式）
 func (r *Room) Broadcast(msg ServerMessage) {
 	data, err := json.Marshal(msg)
@@ -92,11 +105,11 @@ func (r *Room) SendToUser(userID uint, msg ServerMessage) {
 
 // BroadcastUserCount 广播在线人数
 func (r *Room) BroadcastUserCount() {
-	count := r.ClientCount()
+	count := r.ViewerCount()
 	r.Broadcast(ServerMessage{
 		Type: MsgUserCount,
 		Code: 0,
-		Data: map[string]any{"count": count},
+		Data: map[string]any{"count": count, "onlineCount": count},
 		Ts:   time.Now().UnixMilli(),
 	})
 }

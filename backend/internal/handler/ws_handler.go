@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -189,7 +190,7 @@ func (h *WsMessageHandler) OnBid(client *ws.Client, payload *ws.BidPayload) erro
 	})
 
 	// Broadcast new bid to the room
-	h.broadcastBidToRoom(ctx, client, payload.AuctionID, auction.Mode, result)
+	h.broadcastBidToRoom(ctx, client, payload.AuctionID, auction.Mode, auction.MerchantID, result)
 
 	// If hit ceiling, trigger full completion side-effects
 	if result.HitCeiling {
@@ -218,6 +219,51 @@ func (h *WsMessageHandler) OnBid(client *ws.Client, payload *ws.BidPayload) erro
 	return nil
 }
 
+// OnChat broadcasts a user chat message to the current live room.
+func (h *WsMessageHandler) OnChat(client *ws.Client, payload *ws.ChatPayload) error {
+	if client.RoomID == 0 {
+		client.SendMessage(ws.ServerMessage{
+			Type: ws.MsgError,
+			Code: errcode.CodeNotInRoom,
+			Msg:  "请先加入直播间",
+			Ts:   time.Now().UnixMilli(),
+		})
+		return nil
+	}
+
+	message := strings.TrimSpace(payload.Message)
+	if message == "" {
+		return nil
+	}
+	if len([]rune(message)) > 100 {
+		message = string([]rune(message)[:100])
+	}
+
+	var user model.User
+	nickname := "用户"
+	if err := h.db.Select("id, nickname").First(&user, client.UserID).Error; err == nil && user.Nickname != "" {
+		nickname = user.Nickname
+	}
+
+	room := h.hub.GetRoom(client.RoomID)
+	if room == nil {
+		return nil
+	}
+
+	room.Broadcast(ws.ServerMessage{
+		Type: ws.MsgChatMessage,
+		Code: errcode.CodeOK,
+		Data: map[string]any{
+			"userId":    client.UserID,
+			"nickname":  nickname,
+			"message":   message,
+			"createdAt": time.Now().Format(time.RFC3339Nano),
+		},
+		Ts: time.Now().UnixMilli(),
+	})
+	return nil
+}
+
 // sendRoomState sends the full auction state when a user joins
 func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client, roomID uint) {
 	// Find active auction in this room
@@ -231,9 +277,13 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 	h.db.Select("id, title, stream_url").First(&liveRoom, roomID)
 
 	roomState := map[string]any{
-		"roomId":    roomID,
-		"roomTitle": liveRoom.Title,
-		"streamUrl": liveRoom.StreamURL,
+		"roomId":      roomID,
+		"roomTitle":   liveRoom.Title,
+		"streamUrl":   liveRoom.StreamURL,
+		"onlineCount": 0,
+	}
+	if room := h.hub.GetRoom(roomID); room != nil {
+		roomState["onlineCount"] = room.ViewerCount()
 	}
 
 	if err == nil {
@@ -257,6 +307,8 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 				rankingDTO = h.buildBlindRanking(ranking, client.UserID)
 			}
 
+			h.db.Preload("Product").First(&auction, auction.ID)
+
 			depositRequired := auction.DepositAmount.IsPositive()
 			depositState := h.depositService.GetDepositStatus(ctx, client.UserID, auction.ID)
 			hasDeposit := !depositRequired || depositState["hasPaid"].(bool)
@@ -264,6 +316,8 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 			roomState["auction"] = map[string]any{
 				"id":              auction.ID,
 				"productId":       auction.ProductID,
+				"product":         auction.Product,
+				"productTitle":    auction.Product.Title,
 				"mode":            auction.Mode,
 				"status":          status,
 				"currentPrice":    currentPrice,
@@ -298,6 +352,7 @@ func (h *WsMessageHandler) broadcastBidToRoom(
 	bidder *ws.Client,
 	auctionID uint,
 	mode model.AuctionMode,
+	merchantID uint,
 	result *service.BidResult,
 ) {
 	room := h.hub.GetRoom(bidder.RoomID)
@@ -321,6 +376,7 @@ func (h *WsMessageHandler) broadcastBidToRoom(
 	h.broadcastService.BroadcastNewBid(
 		room,
 		mode,
+		merchantID,
 		alias,
 		result.Amount,
 		result.CurrentPrice,
@@ -335,6 +391,7 @@ func (h *WsMessageHandler) buildOpenRanking(ranking []service.RankItem, viewerUs
 		amount := item.Amount
 		result[i] = service.RankItemDTO{
 			Rank:   item.Rank,
+			UserID: item.UserID,
 			Alias:  item.Alias,
 			Amount: &amount,
 			IsMe:   item.UserID == viewerUserID,
@@ -347,9 +404,10 @@ func (h *WsMessageHandler) buildBlindRanking(ranking []service.RankItem, viewerU
 	result := make([]service.RankItemDTO, len(ranking))
 	for i, item := range ranking {
 		dto := service.RankItemDTO{
-			Rank:  item.Rank,
-			Alias: item.Alias,
-			IsMe:  item.UserID == viewerUserID,
+			Rank:   item.Rank,
+			UserID: item.UserID,
+			Alias:  item.Alias,
+			IsMe:   item.UserID == viewerUserID,
 		}
 		if item.UserID == viewerUserID {
 			amount := item.Amount

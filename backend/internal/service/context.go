@@ -26,6 +26,7 @@ type RankItem struct {
 // RankItemDTO is the client-facing ranking entry (amount may be hidden in blind mode)
 type RankItemDTO struct {
 	Rank   int      `json:"rank"`
+	UserID uint     `json:"userId"`
 	Alias  string   `json:"alias"`
 	Amount *float64 `json:"amount"` // nil in blind mode for other users
 	IsMe   bool     `json:"isMe"`

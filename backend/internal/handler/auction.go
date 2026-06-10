@@ -84,6 +84,71 @@ func (h *Handler) CreateAuction(c *gin.Context) {
 	response.OK(c, auction)
 }
 
+func (h *Handler) ListRoomShowcase(c *gin.Context) {
+	roomID, err := strconv.ParseUint(c.Query("roomId"), 10, 64)
+	if err != nil || roomID == 0 {
+		response.BadRequest(c, "请选择直播间")
+		return
+	}
+
+	var auctions []model.Auction
+	if err := h.db.
+		Where("room_id = ?", roomID).
+		Where("status IN ?", []string{
+			string(model.StatusPending),
+			string(model.StatusActive),
+			string(model.StatusExtended),
+			string(model.StatusCompleted),
+			string(model.StatusFailed),
+			string(model.StatusCancelled),
+		}).
+		Preload("Product").
+		Preload("Winner").
+		Order("created_at ASC").
+		Find(&auctions).Error; err != nil {
+		response.ServerError(c, "获取拍品柜失败")
+		return
+	}
+
+	items := make([]map[string]any, 0, len(auctions))
+	for i, auction := range auctions {
+		item := map[string]any{
+			"id":            auction.ID,
+			"productId":     auction.ProductID,
+			"product":       auction.Product,
+			"status":        auction.Status,
+			"startingPrice": auction.StartingPrice.InexactFloat64(),
+			"currentPrice":  auction.CurrentPrice.InexactFloat64(),
+			"sequence":      i + 1,
+		}
+		if auction.IsTerminal() {
+			item["finalPrice"] = auction.CurrentPrice.InexactFloat64()
+		}
+		if auction.Winner != nil {
+			item["winnerNickname"] = auction.Winner.Nickname
+		}
+		items = append(items, item)
+	}
+
+	response.OK(c, items)
+}
+
+func (h *Handler) ListMerchantAuctions(c *gin.Context) {
+	merchantID, _ := c.Get("userID")
+	var auctions []model.Auction
+	query := h.db.Where("merchant_id = ?", merchantID).Preload("Product").Preload("Room").Order("created_at DESC")
+
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if roomID := c.Query("roomId"); roomID != "" {
+		query = query.Where("room_id = ?", roomID)
+	}
+
+	query.Find(&auctions)
+	response.OK(c, auctions)
+}
+
 func (h *Handler) ListAuctions(c *gin.Context) {
 	var auctions []model.Auction
 	query := h.db.Preload("Product").Preload("Room").Order("created_at DESC")

@@ -44,7 +44,8 @@ func main() {
 
 	// Connect MySQL
 	db, err := gorm.Open(mysql.Open(cfg.Database.DSN()), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger:                                   logger.Default.LogMode(logger.Info),
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		zap.L().Fatal("failed to connect database", zap.Error(err))
@@ -63,6 +64,10 @@ func main() {
 		&model.Bid{},
 		&model.Order{},
 		&model.Deposit{},
+		&model.Follow{},
+		&model.Conversation{},
+		&model.Message{},
+		&model.ConversationParticipant{},
 	); err != nil {
 		zap.L().Fatal("failed to migrate database", zap.Error(err))
 	}

@@ -47,13 +47,30 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	{
 		auth.GET("/user/profile", h.GetProfile)
 		auth.GET("/user/bids", h.ListUserBids)
+		auth.GET("/users/:id/profile", h.GetUserPublicProfile)
+		auth.GET("/users/:id/follow", h.GetFollowStatus)
+		auth.GET("/merchants/:id/profile", h.GetMerchantPublicProfile)
+		auth.POST("/follows", h.FollowUser)
+		auth.DELETE("/follows/:targetUserId", h.UnfollowUser)
+		auth.GET("/follows/following", h.GetFollowing)
+		auth.GET("/follows/followers", h.GetFollowers)
+		auth.GET("/conversations", h.ListConversations)
+		auth.POST("/conversations", h.CreateConversation)
+		auth.GET("/conversations/:id", h.GetConversation)
+		auth.GET("/conversations/:id/messages", h.ListConversationMessages)
+		auth.POST("/conversations/:id/messages", h.SendConversationMessage)
+		auth.POST("/conversations/:id/read", h.MarkConversationRead)
 
 		// Rooms
 		auth.GET("/rooms", h.ListRooms)
 		auth.GET("/rooms/:id", h.GetRoom)
 
+		// Products
+		auth.GET("/products/:id", h.GetProduct)
+
 		// Auctions
 		auth.GET("/auctions", h.ListAuctions)
+		auth.GET("/auctions/showcase", h.ListRoomShowcase)
 		auth.GET("/auctions/:id", h.GetAuction)
 
 		// Orders
@@ -88,11 +105,13 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		merchant.PUT("/products/:id/unlist", h.UnlistProduct)
 
 		// Rooms
+		merchant.GET("/rooms", h.ListMerchantRooms)
 		merchant.POST("/rooms", h.CreateRoom)
 		merchant.PUT("/rooms/:id/start", h.StartRoom)
 		merchant.PUT("/rooms/:id/end", h.EndRoom)
 
 		// Auctions
+		merchant.GET("/auctions", h.ListMerchantAuctions)
 		merchant.POST("/auctions", h.CreateAuction)
 		merchant.PUT("/auctions/:id", h.UpdateAuction)
 		merchant.PUT("/auctions/:id/start", h.StartAuction)
@@ -104,6 +123,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 		// Stats
 		merchant.GET("/stats", h.GetMerchantStats)
+		merchant.GET("/followers", h.GetMerchantFollowers)
 	}
 
 	// WebSocket
