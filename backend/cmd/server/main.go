@@ -73,6 +73,9 @@ func main() {
 	}
 	zap.L().Info("database migrated successfully")
 
+	// Run Seed
+	model.SeedDatabase(db)
+
 	// Connect Redis
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
