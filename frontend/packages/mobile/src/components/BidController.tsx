@@ -35,7 +35,8 @@ export default function BidController({
   const refundHint = useAuctionStore((s) => s.refundHint);
   const setDepositPaid = useAuctionStore((s) => s.setDepositPaid);
   const setDepositRefunded = useAuctionStore((s) => s.setDepositRefunded);
-  const { placeBid, bidPending, lastBidResult } = useBidStore();
+  const { placeBid, bidPending, lastBidResult, myRank } = useBidStore();
+  const isHighestBidder = myRank === 1;
   const { user, loadProfile } = useAuthStore();
 
   const minBid = currentPrice + increment;
@@ -192,9 +193,9 @@ export default function BidController({
                 <button
                   type="button"
                   onClick={handleBid}
-                  disabled={bidPending || amount < minBid}
+                  disabled={bidPending || amount < minBid || isHighestBidder}
                   className={`px-6 py-3 rounded-xl font-bold text-white transition-all whitespace-nowrap active:scale-95 text-sm flex items-center gap-1 ${
-                    cooldown
+                    cooldown || isHighestBidder
                       ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
                       : depositRequired && !hasDeposit
                         ? 'bg-zinc-700 text-zinc-300'
@@ -203,7 +204,7 @@ export default function BidController({
                 >
                   <Coins className="w-4 h-4" />
                   <span>
-                    {bidPending ? '…' : cooldown ? '冷却中' : depositRequired && !hasDeposit ? '先参拍' : '出价'}
+                    {bidPending ? '…' : cooldown ? '冷却中' : isHighestBidder ? '已是最高价' : depositRequired && !hasDeposit ? '先参拍' : '出价'}
                   </span>
                 </button>
               </div>

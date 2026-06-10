@@ -15,6 +15,7 @@ var (
 
 	ErrBidTooLow      = errors.New("出价太低")
 	ErrBidTooFrequent = errors.New("出价太频繁，每秒仅可出价1次")
+	ErrAlreadyHighestBidder = errors.New("你已经是最高价了")
 	ErrBidCeilingHit  = errors.New("已达封顶价")
 
 	ErrRoomNotFound = errors.New("直播间不存在")

@@ -90,6 +90,12 @@ if now > end_time then
     return cjson.encode({code = -3, msg = "auction_ended"})
 end
 
+-- Check if already highest bidder
+local winner_id = redis.call('HGET', KEYS[1], 'winner_id')
+if winner_id == ARGV[2] then
+    return cjson.encode({code = -4, msg = "already_highest"})
+end
+
 -- Validate bid amount
 if new_bid < current_price + increment then
     return cjson.encode({code = -1, msg = "bid_too_low", current_price = current_price})
@@ -487,6 +493,8 @@ func (s *BidService) handleLuaResult(result *LuaBidResult, auctionID uint) *BidR
 		return &BidResult{Accepted: false, Msg: "竞拍未在进行中"}
 	case -3:
 		return &BidResult{Accepted: false, Msg: "竞拍已结束"}
+	case -4:
+		return &BidResult{Accepted: false, Msg: "你已经是最高价了"}
 	default:
 		return &BidResult{Accepted: false, Msg: "出价失败"}
 	}
@@ -500,6 +508,8 @@ func (s *BidService) luaCodeToError(code int) error {
 		return errcode.ErrAuctionNotActive
 	case -3:
 		return errcode.ErrAuctionEnded
+	case -4:
+		return errcode.ErrAlreadyHighestBidder
 	default:
 		return fmt.Errorf("bid failed with code %d", code)
 	}
