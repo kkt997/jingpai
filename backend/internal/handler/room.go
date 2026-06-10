@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"strconv"
 	"time"
 
@@ -109,6 +110,6 @@ func (h *Handler) EndRoom(c *gin.Context) {
 	room.Status = model.RoomEnded
 	room.EndedAt = &now
 	h.db.Save(&room)
-	go h.depositService.RefundByRoomEnd(c.Request.Context(), room.ID)
+	go h.depositService.RefundByRoomEnd(context.Background(), room.ID)
 	response.OK(c, room)
 }

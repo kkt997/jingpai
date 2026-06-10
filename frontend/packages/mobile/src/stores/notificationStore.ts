@@ -4,6 +4,7 @@ export type NotificationType =
   | 'bid_success'
   | 'bid_leading'
   | 'bid_overtaken'
+  | 'auction_start'
   | 'auction_extending'
   | 'auction_ending'
   | 'auction_won'

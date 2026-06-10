@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { WsClient, depositApi } from '@jingpai/shared';
 import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
+import { useAuthStore } from '../stores/authStore';
 import { ShieldAlert, ShieldCheck, Coins, X } from 'lucide-react';
 
 interface Props {
@@ -35,8 +36,11 @@ export default function BidController({
   const setDepositPaid = useAuctionStore((s) => s.setDepositPaid);
   const setDepositRefunded = useAuctionStore((s) => s.setDepositRefunded);
   const { placeBid, bidPending, lastBidResult } = useBidStore();
+  const { user, loadProfile } = useAuthStore();
 
   const minBid = currentPrice + increment;
+  const walletBalance = Number(user?.balance ?? 0);
+  const balanceInsufficient = depositRequired && !hasDeposit && walletBalance < depositAmount;
   const [amount, setAmount] = useState(minBid);
   const [depositLoading, setDepositLoading] = useState(false);
   const [refundLoading, setRefundLoading] = useState(false);
@@ -101,6 +105,7 @@ export default function BidController({
     try {
       await depositApi.pay(auctionId);
       setDepositPaid();
+      await loadProfile();
       setDrawerOpen(false);
       showToast('已参加竞拍，平台保证金托管中');
     } catch (err: any) {
@@ -116,6 +121,7 @@ export default function BidController({
     try {
       await depositApi.refund(auctionId);
       setDepositRefunded();
+      await loadProfile();
       setDrawerOpen(false);
       showToast('保证金已退回平台钱包');
     } catch (err: any) {
@@ -267,9 +273,30 @@ export default function BidController({
                 </button>
               </div>
 
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-2">
-                <div className="text-xs text-zinc-500">当前场次保证金</div>
-                <div className="text-2xl font-extrabold text-amber-400 tabular-nums">¥{depositAmount.toLocaleString()}</div>
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+                <div>
+                  <div className="text-xs text-zinc-500">当前场次保证金</div>
+                  <div className="text-2xl font-extrabold text-amber-400 tabular-nums">¥{depositAmount.toLocaleString()}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-xl bg-zinc-950/60 border border-zinc-800 p-3">
+                    <div className="text-zinc-500">钱包余额</div>
+                    <div className={`mt-1 font-bold tabular-nums ${balanceInsufficient ? 'text-red-400' : 'text-emerald-400'}`}>
+                      ¥{walletBalance.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-zinc-950/60 border border-zinc-800 p-3">
+                    <div className="text-zinc-500">支付后余额</div>
+                    <div className="mt-1 font-bold text-zinc-200 tabular-nums">
+                      ¥{Math.max(walletBalance - depositAmount, 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                {balanceInsufficient && (
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                    余额不足，请先到个人中心设置余额
+                  </div>
+                )}
                 <div className="text-xs text-zinc-400 leading-relaxed">
                   {refundHint || '参加竞拍后方可出价；直播结束后平台自动退回保证金。'}
                 </div>

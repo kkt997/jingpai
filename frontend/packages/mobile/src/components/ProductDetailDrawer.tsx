@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, ShoppingBag, Info } from 'lucide-react';
-import { productApi, Product } from '@jingpai/shared';
+import { productApi, Product, conversationApi } from '@jingpai/shared';
+import { useNavigate } from 'react-router-dom';
 
 interface Props {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function ProductDetailDrawer({ isOpen, onClose, productId, fallbackProduct }: Props) {
+  const navigate = useNavigate();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -55,6 +57,23 @@ export default function ProductDetailDrawer({ isOpen, onClose, productId, fallba
     e.stopPropagation();
     if (!product || product.images.length <= 1) return;
     setActiveImageIndex((prev) => (prev === product.images.length - 1 ? 0 : prev + 1));
+  };
+
+  const handleOpenMerchant = () => {
+    if (!product?.merchantId) return;
+    onClose();
+    navigate(`/merchants/${product.merchantId}`);
+  };
+
+  const handleContactMerchant = async () => {
+    if (!product?.merchantId) return;
+    try {
+      const res: any = await conversationApi.create(product.merchantId);
+      onClose();
+      navigate(`/messages/${res.data.id}`);
+    } catch (err: any) {
+      alert(err?.msg || '发起私聊失败');
+    }
   };
 
   return (
@@ -176,6 +195,23 @@ export default function ProductDetailDrawer({ isOpen, onClose, productId, fallba
                   <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-900 text-sm text-zinc-400 font-medium leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto">
                     {product.description || '本商品暂无详细描述，欢迎详询主播获取宝贝规格和实时实物演示。'}
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleOpenMerchant}
+                    className="w-full py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-sm font-medium text-zinc-100"
+                  >
+                    查看商家
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleContactMerchant}
+                    className="w-full py-3 rounded-2xl bg-brand text-white text-sm font-medium"
+                  >
+                    联系商家
+                  </button>
                 </div>
               </div>
             ) : (

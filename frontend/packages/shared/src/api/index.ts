@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { ConversationListItem, ConversationMessage, FollowListItem, FollowStatus, MerchantProfileSummary, UserProfileSummary } from '../types';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -36,12 +37,39 @@ export const authApi = {
 // User
 export const userApi = {
   bids: (params?: { auctionId?: number }) => api.get('/user/bids', { params }),
+  setBalance: (balance: number) => api.put('/user/balance', { balance }),
+};
+
+export const profileApi = {
+  user: (id: number) => api.get<UserProfileSummary>(`/users/${id}/profile`),
+  merchant: (id: number) => api.get<MerchantProfileSummary>(`/merchants/${id}/profile`),
+};
+
+export const followApi = {
+  follow: (targetUserId: number) => api.post<FollowStatus>('/follows', { targetUserId }),
+  unfollow: (targetUserId: number) => api.delete<FollowStatus>(`/follows/${targetUserId}`),
+  status: (targetUserId: number) => api.get<FollowStatus>(`/users/${targetUserId}/follow`),
+  following: () => api.get<FollowListItem[]>('/follows/following'),
+  followers: () => api.get<FollowListItem[]>('/follows/followers'),
+  merchantFollowers: () => api.get<FollowListItem[]>('/merchant/followers'),
+};
+
+export const conversationApi = {
+  list: () => api.get<ConversationListItem[]>('/conversations'),
+  create: (peerUserId: number) => api.post<ConversationListItem>('/conversations', { peerUserId }),
+  detail: (id: number) => api.get<ConversationListItem>(`/conversations/${id}`),
+  messages: (id: number, params?: { before?: number; limit?: number }) =>
+    api.get<ConversationMessage[]>(`/conversations/${id}/messages`, { params }),
+  sendMessage: (id: number, content: string) =>
+    api.post<ConversationMessage>(`/conversations/${id}/messages`, { content }),
+  markRead: (id: number, messageId?: number) => api.post(`/conversations/${id}/read`, { messageId }),
 };
 
 // Rooms
 export const roomApi = {
   list: (params?: { status?: string }) => api.get('/rooms', { params }),
   get: (id: number) => api.get(`/rooms/${id}`),
+  merchantList: (params?: { status?: string }) => api.get('/merchant/rooms', { params }),
   create: (data: { title: string; coverUrl?: string; streamUrl?: string }) =>
     api.post('/merchant/rooms', data),
   start: (id: number) => api.put(`/merchant/rooms/${id}/start`),
@@ -84,6 +112,8 @@ export const merchantApi = {
 export const auctionApi = {
   list: (params?: { status?: string; roomId?: string }) => api.get('/auctions', { params }),
   get: (id: number) => api.get(`/auctions/${id}`),
+  showcase: (roomId: number) => api.get('/auctions/showcase', { params: { roomId } }),
+  merchantList: (params?: { status?: string; roomId?: string }) => api.get('/merchant/auctions', { params }),
   create: (data: Record<string, unknown>) => api.post('/merchant/auctions', data),
   update: (id: number, data: Record<string, unknown>) => api.put(`/merchant/auctions/${id}`, data),
   start: (id: number) => api.put(`/merchant/auctions/${id}/start`),

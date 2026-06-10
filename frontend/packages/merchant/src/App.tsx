@@ -8,6 +8,11 @@ import RoomsPage from './pages/RoomsPage';
 import OrdersPage from './pages/OrdersPage';
 import LivePanelPage from './pages/LivePanelPage';
 import RoomPreviewPage from './pages/RoomPreviewPage';
+import ProfilePage from './pages/ProfilePage';
+import EarningsPage from './pages/EarningsPage';
+import MessagesPage from './pages/MessagesPage';
+import ConversationPage from './pages/ConversationPage';
+import FollowersPage from './pages/FollowersPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token');
@@ -32,6 +37,11 @@ export default function App() {
         <Route path="auctions" element={<AuctionsPage />} />
         <Route path="rooms" element={<RoomsPage />} />
         <Route path="orders" element={<OrdersPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="earnings" element={<EarningsPage />} />
+        <Route path="messages" element={<MessagesPage />} />
+        <Route path="messages/:conversationId" element={<ConversationPage />} />
+        <Route path="followers" element={<FollowersPage />} />
         <Route path="live-panel" element={<LivePanelPage />} />
         <Route path="room/:roomId" element={<RoomPreviewPage />} />
       </Route>

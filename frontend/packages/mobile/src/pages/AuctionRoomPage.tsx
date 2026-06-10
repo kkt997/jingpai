@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { WsClient } from '@jingpai/shared';
+import { WsClient, conversationApi } from '@jingpai/shared';
 import { useAuthStore } from '../stores/authStore';
 import { useAuctionStore } from '../stores/auctionStore';
 import { useBidStore } from '../stores/bidStore';
@@ -14,7 +14,7 @@ import BidController from '../components/BidController';
 import NotificationLayer from '../components/NotificationLayer';
 import ProductDetailDrawer from '../components/ProductDetailDrawer';
 import ShowcaseDrawer from '../components/ShowcaseDrawer';
-import { Eye, Send, Trophy, Clock, Sparkles, WalletCards, Gavel } from 'lucide-react';
+import { Eye, Send, Trophy, Clock, Sparkles, WalletCards, Gavel, MessageCircleMore } from 'lucide-react';
 
 export default function AuctionRoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -28,7 +28,6 @@ export default function AuctionRoomPage() {
   const [chatInput, setChatInput] = useState('');
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
   const [bidPanelExpanded, setBidPanelExpanded] = useState(false);
-  const [quickCooldown, setQuickCooldown] = useState(false);
 
   const auction = useAuctionStore();
   const bid = useBidStore();
@@ -54,6 +53,7 @@ export default function AuctionRoomPage() {
     return () => {
       cleanup();
       ws.disconnect();
+      chatStore.clearMessages();
       auction.reset();
       bid.reset();
       room.reset();
@@ -84,15 +84,30 @@ export default function AuctionRoomPage() {
 
   const handleQuickBid = (multiplier: number) => {
     const auctionId = auction.auction?.id;
-    if (!wsRef.current || !auctionId || bid.bidPending || quickCooldown) return;
+    if (!wsRef.current || !auctionId || bid.bidPending) return;
     if (auction.depositRequired && !auction.hasDeposit) {
       setDepositDrawerOpen(true);
       return;
     }
     const amount = auction.currentPrice + increment * multiplier;
     bid.placeBid(wsRef.current, auctionId, amount);
-    setQuickCooldown(true);
-    setTimeout(() => setQuickCooldown(false), 1500);
+  };
+
+  const merchantUserId = auction.product?.merchantId || auction.auction?.merchantId || undefined;
+
+  const handleOpenMerchant = () => {
+    if (!merchantUserId) return;
+    navigate(`/merchants/${merchantUserId}`);
+  };
+
+  const handleContactMerchant = async () => {
+    if (!merchantUserId) return;
+    try {
+      const res: any = await conversationApi.create(merchantUserId);
+      navigate(`/messages/${res.data.id}`);
+    } catch (err: any) {
+      alert(err?.msg || '联系商家失败');
+    }
   };
 
   return (
@@ -108,7 +123,7 @@ export default function AuctionRoomPage() {
 
         {/* ─── Top bar ─── */}
         <div className="flex items-start justify-between pointer-events-auto pt-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               aria-label="返回"
@@ -122,6 +137,25 @@ export default function AuctionRoomPage() {
               <span className="text-xs font-bold mr-2">LIVE</span>
               <span className="text-xs text-gray-300">直播间 #{roomId}</span>
             </div>
+            {merchantUserId && (
+              <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full px-2 py-1 border border-white/10">
+                <button
+                  type="button"
+                  onClick={handleOpenMerchant}
+                  className="px-2.5 py-1 rounded-full text-xs text-white hover:bg-white/10 transition"
+                >
+                  商家主页
+                </button>
+                <button
+                  type="button"
+                  onClick={handleContactMerchant}
+                  className="w-8 h-8 rounded-full bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-300 hover:bg-orange-500/30 transition"
+                  title="联系商家"
+                >
+                  <MessageCircleMore className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col items-end gap-2">
@@ -143,10 +177,14 @@ export default function AuctionRoomPage() {
                   {bid.ranking.slice(0, 3).map((item, i) => {
                     const medals = ['🥇', '🥈', '🥉'];
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`${item.rank}-${item.alias}`}
-                        className={`flex items-center justify-between p-1 rounded-lg border ${
-                          item.isMe ? 'bg-brand/20 border-brand/50' : 'bg-white/5 border-white/5'
+                        disabled={!item.isMe}
+                        className={`flex items-center justify-between p-1 rounded-lg border w-full text-left transition ${
+                          item.isMe
+                            ? 'bg-brand/20 border-brand/50 cursor-default'
+                            : 'bg-white/5 border-white/5'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 overflow-hidden">
@@ -158,7 +196,7 @@ export default function AuctionRoomPage() {
                         <span className={`text-[10px] font-mono font-bold ${item.isMe ? 'text-amber-300' : 'text-gray-200'}`}>
                           {item.amount !== null ? `¥${item.amount.toLocaleString()}` : '¥•••'}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -284,48 +322,50 @@ export default function AuctionRoomPage() {
                 </div>
               </div>
 
-              {/* Quick bid buttons */}
-              {isActive && (
-                <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-white/10 relative z-10">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickBid(1)}
-                    disabled={quickCooldown || bid.bidPending}
-                    className="bg-gradient-to-b from-white/10 to-white/5 hover:from-white/20 active:scale-95 text-white rounded-xl py-2 text-sm font-bold border border-white/10 transition-all disabled:opacity-40"
-                  >
-                    +{increment.toLocaleString()}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickBid(5)}
-                    disabled={quickCooldown || bid.bidPending}
-                    className="bg-gradient-to-b from-white/10 to-white/5 hover:from-amber-500/20 active:scale-95 text-amber-400 rounded-xl py-2 text-sm font-bold border border-amber-500/30 transition-all disabled:opacity-40"
-                  >
-                    +{(increment * 5).toLocaleString()}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickBid(10)}
-                    disabled={quickCooldown || bid.bidPending}
-                    className="bg-gradient-to-b from-orange-500/20 to-orange-500/5 hover:from-orange-500/40 active:scale-95 text-orange-400 rounded-xl py-2 text-sm font-bold border border-orange-500/50 transition-all shadow-[0_0_10px_rgba(249,115,22,0.2)] disabled:opacity-40"
-                  >
-                    +{(increment * 10).toLocaleString()}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBidPanelExpanded(true)}
-                    className="bg-gradient-to-r from-brand to-orange-500 hover:from-brand-dark text-white rounded-xl py-2 text-sm font-bold active:scale-95 transition-all shadow-lg"
-                  >
-                    出价
-                  </button>
-                </div>
-              )}
-
               {auction.extendCount > 0 && isActive && (
                 <div className="mt-2 text-center text-[10px] text-amber-400/80 relative z-10">
                   延时 {auction.extendCount}/{auction.maxExtendCount} 次
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ─── Persistent bid bar — always visible during active auction ─── */}
+          {isActive && (
+            <div className="bg-black/60 backdrop-blur-xl border border-amber-500/20 rounded-2xl p-2.5 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+              <div className="grid grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleQuickBid(1)}
+                  disabled={bid.bidPending}
+                  className="bg-gradient-to-b from-white/10 to-white/5 hover:from-white/20 active:scale-95 text-white rounded-xl py-2.5 text-sm font-bold border border-white/10 transition-all disabled:opacity-40"
+                >
+                  +{increment.toLocaleString()}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickBid(5)}
+                  disabled={bid.bidPending}
+                  className="bg-gradient-to-b from-white/10 to-white/5 hover:from-amber-500/20 active:scale-95 text-amber-400 rounded-xl py-2.5 text-sm font-bold border border-amber-500/30 transition-all disabled:opacity-40"
+                >
+                  +{(increment * 5).toLocaleString()}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickBid(10)}
+                  disabled={bid.bidPending}
+                  className="bg-gradient-to-b from-orange-500/20 to-orange-500/5 hover:from-orange-500/40 active:scale-95 text-orange-400 rounded-xl py-2.5 text-sm font-bold border border-orange-500/50 transition-all shadow-[0_0_10px_rgba(249,115,22,0.2)] disabled:opacity-40"
+                >
+                  +{(increment * 10).toLocaleString()}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBidPanelExpanded(true)}
+                  className="bg-gradient-to-r from-brand to-orange-500 hover:from-brand-dark text-white rounded-xl py-2.5 text-sm font-bold active:scale-95 transition-all shadow-lg"
+                >
+                  出价
+                </button>
+              </div>
             </div>
           )}
 
@@ -345,6 +385,7 @@ export default function AuctionRoomPage() {
                 type="button"
                 onClick={handleSendChat}
                 disabled={!chatInput.trim()}
+                title="发送消息"
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-brand disabled:opacity-30"
               >
                 <Send className="w-4 h-4" />

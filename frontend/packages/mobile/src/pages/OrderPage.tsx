@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Order, orderApi } from '@jingpai/shared';
+import { Order, orderApi, conversationApi } from '@jingpai/shared';
 
 const statusConfig: Record<string, { label: string; color: string; desc: string }> = {
   PENDING_PAYMENT: { label: '待付款', color: 'text-yellow-400', desc: '请在30分钟内完成支付' },
@@ -64,6 +64,16 @@ export default function OrderPage() {
     }
   };
 
+  const handleContactMerchant = async () => {
+    if (!order) return;
+    try {
+      const res: any = await conversationApi.create(order.sellerId);
+      navigate(`/messages/${res.data.id}`);
+    } catch (err: any) {
+      alert(err?.msg || '发起私聊失败');
+    }
+  };
+
   if (!order) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -113,6 +123,16 @@ export default function OrderPage() {
             </span>
           </div>
         )}
+      </div>
+
+      <div className="px-4 py-4 border-b border-gray-800">
+        <button
+          type="button"
+          onClick={handleContactMerchant}
+          className="w-full py-3 rounded-2xl bg-gray-900 border border-gray-800 text-gray-100 text-sm font-medium"
+        >
+          联系商家
+        </button>
       </div>
 
       {/* Actions */}

@@ -44,7 +44,7 @@ export default function AuctionsPage() {
   const [loading, setLoading] = useState(false);
 
   const fetchAuctions = () => {
-    auctionApi.list().then((res: any) => setAuctions(res.data || []));
+    auctionApi.merchantList().then((res: any) => setAuctions(res.data || []));
   };
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function AuctionsPage() {
   const openCreateModal = async () => {
     const [prodRes, roomRes] = await Promise.all([
       productApi.list(),
-      roomApi.list(),
+      roomApi.merchantList(),
     ]) as any[];
     setProducts(prodRes.data || []);
     setRooms(roomRes.data || []);

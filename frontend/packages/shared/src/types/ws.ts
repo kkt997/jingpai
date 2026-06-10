@@ -36,3 +36,6 @@ export const MSG_ERROR = 'error';
 
 export const MSG_CHAT = 'chat';
 export const MSG_CHAT_MESSAGE = 'chat_message';
+export const MSG_DIRECT_MESSAGE = 'direct_message';
+export const MSG_CONVERSATION_UPDATED = 'conversation_updated';
+export const MSG_CONVERSATION_READ = 'conversation_read';

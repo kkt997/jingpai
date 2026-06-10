@@ -94,10 +94,10 @@ export const useAuctionStore = create<AuctionState>((set) => ({
     }),
 
   onCountdownSync: (data) =>
-    set({
+    set((state) => ({
       endTime: data.endTime,
-      status: data.status,
-    }),
+      status: data.status || state.status,
+    })),
 
   setDepositPaid: () =>
     set({

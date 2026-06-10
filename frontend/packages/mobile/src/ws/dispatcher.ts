@@ -19,6 +19,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { useRoomStore } from '../stores/roomStore';
 import { useChatStore } from '../stores/chatStore';
 import { useShowcaseStore } from '../stores/showcaseStore';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * WsDispatcher is a pure logic layer that connects WebSocket messages to Zustand stores.
@@ -31,6 +32,7 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
   const room = useRoomStore.getState;
   const chat = useChatStore.getState;
   const showcase = useShowcaseStore.getState;
+  const currentUserID = useAuthStore.getState().user?.id;
 
   const unsubscribers: (() => void)[] = [];
 
@@ -69,16 +71,6 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
       }
       showcase().onNewBid(data.amount);
 
-      // 添加系统弹幕公告
-      const nickname = data.winnerNickname || '神秘买家';
-      chat().addMessage({
-        nickname: '系统',
-        message: `${nickname} 出价 ¥${data.amount?.toLocaleString()}`,
-        isMe: false,
-        createdAt: new Date().toISOString(),
-        type: 'system',
-      });
-
       // "被超越" notification — rank dropped
       const newRank = bidStore().myRank;
       if (prevRank && newRank && newRank > prevRank) {
@@ -115,6 +107,11 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
         isMe: false,
         createdAt: new Date().toISOString(),
         type: 'system',
+      });
+      notify().push({
+        type: 'auction_start',
+        message: '竞拍正式开始！',
+        duration: 3000,
       });
     })
   );
@@ -192,11 +189,11 @@ export function createWsDispatcher(ws: WsClient, roomId: number) {
   unsubscribers.push(
     ws.on(MSG_CHAT_MESSAGE, (msg: ServerMessage) => {
       const data = msg.data as any;
-      if (data && !data.isMe) {
+      if (data) {
         chat().addMessage({
-          nickname: data.nickname || '神秘买家',
+          nickname: data.nickname || '用户',
           message: data.message,
-          isMe: false,
+          isMe: data.userId === currentUserID,
           createdAt: data.createdAt || new Date().toISOString(),
           type: data.nickname === '系统' ? 'system' : 'user',
         });

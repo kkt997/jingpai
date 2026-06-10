@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   WsClient,
   ConnectionStatus,
@@ -14,6 +15,7 @@ import {
   MSG_COUNTDOWN_SYNC,
   MSG_USER_COUNT,
   MSG_RANKING_UPDATE,
+  conversationApi,
 } from '@jingpai/shared';
 
 interface BidRecord {
@@ -54,6 +56,7 @@ const STATUS_MAP: Record<string, { label: string; dot: string }> = {
 };
 
 export default function LivePanelPage() {
+  const navigate = useNavigate();
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('disconnected');
@@ -68,7 +71,7 @@ export default function LivePanelPage() {
   const rafRef = useRef<number>(0);
 
   useEffect(() => {
-    roomApi.list().then((res: any) => {
+    roomApi.merchantList().then((res: any) => {
       const all: LiveRoom[] = res.data || [];
       setRooms(all);
       const live = all.find((r) => r.status === 'LIVE');
@@ -296,6 +299,15 @@ export default function LivePanelPage() {
   const isLive = auction?.status === 'ACTIVE' || auction?.status === 'EXTENDED';
   const statusInfo = STATUS_MAP[auction?.status || ''] || { label: '无竞拍', dot: 'bg-gray-300' };
 
+  const handleContactUser = async (userId: number) => {
+    try {
+      const res: any = await conversationApi.create(userId);
+      navigate(`/messages/${res.data.id}`);
+    } catch (err: any) {
+      alert(err?.msg || '发起私聊失败');
+    }
+  };
+
   return (
     <div className="p-6 h-[calc(100vh-0px)] flex flex-col">
       <div className="flex justify-between items-center mb-4">
@@ -444,6 +456,7 @@ export default function LivePanelPage() {
                       <th className="text-left px-4 py-2 w-12">#</th>
                       <th className="text-left px-4 py-2">竞拍者</th>
                       <th className="text-right px-4 py-2">出价</th>
+                      <th className="text-left px-4 py-2 w-28">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -474,6 +487,15 @@ export default function LivePanelPage() {
                           ) : (
                             <span className="text-gray-300">****</span>
                           )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <button
+                            type="button"
+                            onClick={() => handleContactUser(r.userId)}
+                            className="px-3 py-1 rounded-lg border border-zinc-200 text-zinc-700 text-xs hover:bg-zinc-50"
+                          >
+                            私信
+                          </button>
                         </td>
                       </tr>
                     ))}

@@ -272,6 +272,12 @@ func (t *AuctionTimer) onTimeout(auctionID uint) {
 
 	if newStatus == model.StatusCompleted {
 		go t.generateOrder(ctx, &auction)
+		// Deduct winner's deposit and refund all other participants
+		winnerID := t.getWinnerID(ctx, auctionID)
+		if winnerID > 0 {
+			t.depositService.DeductWinner(ctx, auctionID, winnerID)
+		}
+		go t.refundAllDeposits(ctx, auctionID)
 	} else if newStatus == model.StatusFailed {
 		go t.refundAllDeposits(ctx, auctionID)
 	}

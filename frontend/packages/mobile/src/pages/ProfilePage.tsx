@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { depositApi, Deposit } from '@jingpai/shared';
+import { depositApi, userApi, Deposit } from '@jingpai/shared';
 
 export default function ProfilePage() {
   const { user, logout, loadProfile } = useAuthStore();
   const navigate = useNavigate();
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [showDeposits, setShowDeposits] = useState(false);
+  const [balanceInput, setBalanceInput] = useState('');
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [walletMsg, setWalletMsg] = useState('');
 
   useEffect(() => {
     loadProfile();
@@ -16,15 +19,15 @@ export default function ProfilePage() {
 
   const frozenAmount = deposits
     .filter((d) => d.status === 'FROZEN')
-    .reduce((sum, d) => sum + d.amount, 0);
+    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
 
   const settledAmount = deposits
     .filter((d) => d.status === 'DEDUCTED')
-    .reduce((sum, d) => sum + d.amount, 0);
+    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
 
   const totalRefunded = deposits
     .filter((d) => d.status === 'REFUNDED')
-    .reduce((sum, d) => sum + d.amount, 0);
+    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
 
   const handleLogout = () => {
     logout();
@@ -34,6 +37,27 @@ export default function ProfilePage() {
   const handleSwitchAccount = () => {
     logout();
     navigate('/login', { replace: true });
+  };
+
+  const handleSetBalance = async () => {
+    const nextBalance = Number(balanceInput);
+    if (balanceInput.trim() === '' || Number.isNaN(nextBalance) || nextBalance < 0) {
+      setWalletMsg('请输入不小于 0 的余额');
+      return;
+    }
+
+    setBalanceLoading(true);
+    setWalletMsg('');
+    try {
+      await userApi.setBalance(nextBalance);
+      await loadProfile();
+      setBalanceInput('');
+      setWalletMsg('余额已更新');
+    } catch (err: any) {
+      setWalletMsg(err?.msg || '设置余额失败');
+    } finally {
+      setBalanceLoading(false);
+    }
   };
 
   const statusLabel: Record<string, { text: string; color: string }> = {
@@ -65,6 +89,39 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Wallet balance */}
+      <div className="mx-4 mt-4 bg-gradient-to-br from-amber-500/15 to-orange-600/10 rounded-2xl p-5 border border-amber-500/20">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-sm text-amber-200/80 font-medium">钱包余额</div>
+            <div className="text-3xl font-extrabold text-amber-300 mt-2">
+              ¥{(user?.balance ?? 0).toLocaleString()}
+            </div>
+            <div className="text-xs text-gray-400 mt-2">用于缴纳参拍保证金，可自行设置</div>
+          </div>
+          <span className="text-3xl">💳</span>
+        </div>
+        <div className="mt-4 flex gap-2">
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={balanceInput}
+            onChange={(e) => setBalanceInput(e.target.value)}
+            placeholder="设置余额"
+            className="flex-1 min-w-0 rounded-xl bg-gray-950/60 border border-gray-800 px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+          />
+          <button
+            onClick={handleSetBalance}
+            disabled={balanceLoading}
+            className="px-4 py-2 rounded-xl bg-amber-500 text-gray-950 text-sm font-bold disabled:opacity-50"
+          >
+            {balanceLoading ? '保存中' : '保存'}
+          </button>
+        </div>
+        {walletMsg && <div className="text-xs text-amber-200 mt-2">{walletMsg}</div>}
       </div>
 
       {/* Wallet */}

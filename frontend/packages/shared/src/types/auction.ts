@@ -11,6 +11,7 @@ export interface User {
   nickname: string;
   avatarUrl: string;
   role: UserRole;
+  balance: number;
   createdAt: string;
 }
 

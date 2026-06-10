@@ -25,7 +25,7 @@ export default function RoomsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchRooms = () => {
-    roomApi.list().then((res: any) => setRooms(res.data || []));
+    roomApi.merchantList().then((res: any) => setRooms(res.data || []));
   };
 
   useEffect(() => {

@@ -8,6 +8,10 @@ import {
   FileText,
   LogOut,
   Store,
+  UserRound,
+  Coins,
+  MessageCircleMore,
+  Users,
 } from 'lucide-react';
 
 const navItems = [
@@ -17,6 +21,10 @@ const navItems = [
   { path: '/rooms', label: '直播间管理', icon: Tv },
   { path: '/live-panel', label: '实时大屏', icon: Radio },
   { path: '/orders', label: '订单管理', icon: FileText },
+  { path: '/messages', label: '消息中心', icon: MessageCircleMore },
+  { path: '/followers', label: '粉丝管理', icon: Users },
+  { path: '/profile', label: '个人中心', icon: UserRound },
+  { path: '/earnings', label: '收益中心', icon: Coins },
 ];
 
 export default function Layout() {
@@ -69,6 +77,7 @@ export default function Layout() {
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-zinc-100">
           <button
+            type="button"
             onClick={handleLogout}
             className="flex items-center gap-2 w-full px-4 py-2 text-sm text-zinc-500 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition duration-200"
           >

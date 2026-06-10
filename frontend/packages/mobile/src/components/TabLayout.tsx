@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 const tabs = [
   { path: '/', label: '首页' },
+  { path: '/messages', label: '消息' },
   { path: '/my-bids', label: '我的竞拍' },
   { path: '/orders', label: '我的订单' },
   { path: '/profile', label: '我的' },
@@ -22,6 +23,7 @@ export default function TabLayout() {
           const active = pathname === tab.path;
           return (
             <button
+              type="button"
               key={tab.path}
               onClick={() => navigate(tab.path)}
               className={`flex-1 py-3 text-center text-sm transition ${

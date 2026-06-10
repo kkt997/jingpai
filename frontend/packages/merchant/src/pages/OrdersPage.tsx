@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Order, orderApi } from '@jingpai/shared';
+import { Order, conversationApi, orderApi } from '@jingpai/shared';
+import { useNavigate } from 'react-router-dom';
 
 const statusLabels: Record<string, { label: string; color: string }> = {
   PENDING_PAYMENT: { label: '待付款', color: 'bg-yellow-100 text-yellow-700' },
@@ -10,6 +11,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 };
 
 export default function OrdersPage() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +33,15 @@ export default function OrdersPage() {
       alert(err?.msg || '操作失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleContactBuyer = async (buyerId: number) => {
+    try {
+      const res: any = await conversationApi.create(buyerId);
+      navigate(`/messages/${res.data.id}`);
+    } catch (err: any) {
+      alert(err?.msg || '发起私聊失败');
     }
   };
 
@@ -80,15 +91,25 @@ export default function OrdersPage() {
                     {new Date(order.createdAt).toLocaleString()}
                   </td>
                   <td className="px-6 py-4">
-                    {order.status === 'PAID' && (
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => handleShip(order.id)}
-                        disabled={loading}
-                        className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50"
+                        type="button"
+                        onClick={() => handleContactBuyer(order.buyerId)}
+                        className="px-3 py-1 border border-zinc-200 text-zinc-700 rounded text-sm hover:bg-zinc-50"
                       >
-                        发货
+                        联系买家
                       </button>
-                    )}
+                      {order.status === 'PAID' && (
+                        <button
+                          type="button"
+                          onClick={() => handleShip(order.id)}
+                          disabled={loading}
+                          className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          发货
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
