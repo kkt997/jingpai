@@ -46,6 +46,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	auth.Use(middleware.AuthRequired())
 	{
 		auth.GET("/user/profile", h.GetProfile)
+		auth.PUT("/user/balance", h.SetBalance)
 		auth.GET("/user/bids", h.ListUserBids)
 		auth.GET("/users/:id/profile", h.GetUserPublicProfile)
 		auth.GET("/users/:id/follow", h.GetFollowStatus)

@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"jingpai/internal/model"
 	"jingpai/internal/pkg/errcode"
@@ -101,55 +102,88 @@ func (s *DepositService) Freeze(ctx context.Context, userID, auctionID uint) (*m
 		return nil, errcode.ErrDepositExists
 	}
 
-	var auction model.Auction
-	if err := s.db.First(&auction, auctionID).Error; err != nil {
-		return nil, fmt.Errorf("竞拍不存在")
-	}
+	var deposit *model.Deposit
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var auction model.Auction
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&auction, auctionID).Error; err != nil {
+			return fmt.Errorf("竞拍不存在")
+		}
 
-	if !auction.IsActive() && auction.Status != model.StatusPending {
-		return nil, errcode.ErrDepositNotAllowed
-	}
+		if !auction.IsActive() && auction.Status != model.StatusPending {
+			return errcode.ErrDepositNotAllowed
+		}
 
-	if auction.DepositAmount.IsZero() {
-		return nil, fmt.Errorf("本场竞拍无需保证金")
-	}
+		if auction.DepositAmount.IsZero() {
+			return fmt.Errorf("本场竞拍无需保证金")
+		}
 
-	if userID == auction.MerchantID {
-		return nil, fmt.Errorf("商家不可参与自己的竞拍")
-	}
+		if userID == auction.MerchantID {
+			return fmt.Errorf("商家不可参与自己的竞拍")
+		}
 
-	if deposit, err := s.GetDepositByUserAuction(ctx, userID, auctionID); err == nil {
-		if deposit.Status == model.DepositRefunded {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return errcode.ErrUserNotFound
+		}
+		if user.Balance.LessThan(auction.DepositAmount) {
+			return errcode.ErrBalanceInsufficient
+		}
+
+		var existing model.Deposit
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND auction_id = ?", userID, auctionID).
+			First(&existing).Error
+		if err == nil {
+			if existing.Status != model.DepositRefunded {
+				return errcode.ErrDepositExists
+			}
+
 			now := time.Now()
 			updates := map[string]any{
 				"status":        model.DepositFrozen,
+				"amount":        auction.DepositAmount,
 				"refund_reason": "",
 				"refunded_at":   nil,
 				"deducted_at":   nil,
 				"updated_at":    now,
 			}
-			if err := s.db.Model(deposit).Updates(updates).Error; err != nil {
-				return nil, fmt.Errorf("重新参与竞拍失败: %w", err)
+			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+				return fmt.Errorf("重新参与竞拍失败: %w", err)
 			}
-			deposit.Status = model.DepositFrozen
-			deposit.RefundReason = ""
-			deposit.RefundedAt = nil
-			deposit.DeductedAt = nil
-			s.rdb.Set(ctx, s.cacheKey(auctionID, userID), "1", 24*time.Hour)
-			return deposit, nil
+			if err := tx.Model(&user).Update("balance", user.Balance.Sub(auction.DepositAmount)).Error; err != nil {
+				return fmt.Errorf("扣减余额失败: %w", err)
+			}
+
+			existing.Status = model.DepositFrozen
+			existing.Amount = auction.DepositAmount
+			existing.RefundReason = ""
+			existing.RefundedAt = nil
+			existing.DeductedAt = nil
+			deposit = &existing
+			return nil
 		}
-		return nil, errcode.ErrDepositExists
-	}
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
 
-	deposit := &model.Deposit{
-		UserID:    userID,
-		AuctionID: auctionID,
-		Amount:    auction.DepositAmount,
-		Status:    model.DepositFrozen,
-	}
+		newDeposit := &model.Deposit{
+			UserID:    userID,
+			AuctionID: auctionID,
+			Amount:    auction.DepositAmount,
+			Status:    model.DepositFrozen,
+		}
+		if err := tx.Create(newDeposit).Error; err != nil {
+			return fmt.Errorf("缴纳保证金失败: %w", err)
+		}
+		if err := tx.Model(&user).Update("balance", user.Balance.Sub(auction.DepositAmount)).Error; err != nil {
+			return fmt.Errorf("扣减余额失败: %w", err)
+		}
 
-	if err := s.db.Create(deposit).Error; err != nil {
-		return nil, fmt.Errorf("缴纳保证金失败: %w", err)
+		deposit = newDeposit
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	s.rdb.Set(ctx, s.cacheKey(auctionID, userID), "1", 24*time.Hour)
@@ -163,29 +197,49 @@ func (s *DepositService) Freeze(ctx context.Context, userID, auctionID uint) (*m
 }
 
 func (s *DepositService) Refund(ctx context.Context, userID, auctionID uint, reason string) (*model.Deposit, error) {
-	deposit, err := s.GetDepositByUserAuction(ctx, userID, auctionID)
+	var deposit model.Deposit
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND auction_id = ?", userID, auctionID).
+			First(&deposit).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errcode.ErrDepositNotFound
+			}
+			return err
+		}
+		if deposit.Status != model.DepositFrozen {
+			return errcode.ErrDepositNotRefundable
+		}
+
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return errcode.ErrUserNotFound
+		}
+		if err := tx.Model(&user).Update("balance", user.Balance.Add(deposit.Amount)).Error; err != nil {
+			return fmt.Errorf("退回余额失败: %w", err)
+		}
+
+		now := time.Now()
+		updates := map[string]any{
+			"status":        model.DepositRefunded,
+			"refund_reason": reason,
+			"refunded_at":   &now,
+			"updated_at":    now,
+		}
+		if err := tx.Model(&deposit).Updates(updates).Error; err != nil {
+			return fmt.Errorf("退还保证金失败: %w", err)
+		}
+		deposit.Status = model.DepositRefunded
+		deposit.RefundReason = reason
+		deposit.RefundedAt = &now
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if deposit.Status != model.DepositFrozen {
-		return nil, errcode.ErrDepositNotRefundable
-	}
 
-	now := time.Now()
-	updates := map[string]any{
-		"status":        model.DepositRefunded,
-		"refund_reason": reason,
-		"refunded_at":   &now,
-		"updated_at":    now,
-	}
-	if err := s.db.Model(deposit).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("退还保证金失败: %w", err)
-	}
 	s.rdb.Del(ctx, s.cacheKey(auctionID, userID))
-	deposit.Status = model.DepositRefunded
-	deposit.RefundReason = reason
-	deposit.RefundedAt = &now
-	return deposit, nil
+	return &deposit, nil
 }
 
 // RefundByAuction refunds all FROZEN deposits for an auction.

@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"jingpai/internal/middleware"
 	"jingpai/internal/model"
+	"jingpai/internal/pkg/errcode"
 	"jingpai/internal/pkg/response"
 )
 
@@ -198,5 +200,37 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		response.NotFound(c, "用户不存在")
 		return
 	}
+	response.OK(c, user)
+}
+
+type SetBalanceRequest struct {
+	Balance float64 `json:"balance"`
+}
+
+func (h *Handler) SetBalance(c *gin.Context) {
+	userID, _ := c.Get("userID")
+
+	var req SetBalanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if req.Balance < 0 {
+		response.BadRequest(c, errcode.ErrInvalidBalance.Error())
+		return
+	}
+
+	balance := decimal.NewFromFloat(req.Balance)
+	var user model.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+	if err := h.db.Model(&user).Update("balance", balance).Error; err != nil {
+		response.ServerError(c, "更新余额失败")
+		return
+	}
+	user.Balance = balance
+
 	response.OK(c, user)
 }
