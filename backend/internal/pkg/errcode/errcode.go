@@ -13,12 +13,13 @@ var (
 	ErrAuctionNotActive = errors.New("竞拍未在进行中")
 	ErrAuctionEnded     = errors.New("竞拍已结束")
 
-	ErrBidTooLow      = errors.New("出价太低")
-	ErrBidTooFrequent = errors.New("出价太频繁，每秒仅可出价1次")
+	ErrBidTooLow            = errors.New("出价太低")
+	ErrBidTooFrequent       = errors.New("出价太频繁，每秒仅可出价1次")
 	ErrAlreadyHighestBidder = errors.New("你已经是最高价了")
-	ErrBidCeilingHit  = errors.New("已达封顶价")
+	ErrBidCeilingHit        = errors.New("已达封顶价")
 
 	ErrRoomNotFound = errors.New("直播间不存在")
+	ErrRoomNotLive  = errors.New("直播间未开播或已结束")
 	ErrTooManyConns = errors.New("连接数超限")
 
 	ErrInvalidTransition    = errors.New("无效的状态转移")
@@ -34,14 +35,18 @@ var (
 
 const (
 	CodeOK                   = 0
+	CodeBadRequest           = 1000
+	CodeInvalidPayload       = 1001
+	CodeNotFound             = 1004
+	CodeUnauthorized         = 2001
+	CodeForbidden            = 2003
 	CodeBidTooLow            = 4001
 	CodeAuctionNotActive     = 4002
 	CodeBidTooFrequent       = 4003
 	CodeNotInRoom            = 4004
 	CodeDepositRequired      = 4005
 	CodeDepositNotRefundable = 4006
-	CodeInvalidPayload       = 4010
-	CodeUnauthorized         = 4011
+	CodeRoomNotLive          = 4007
 	CodeInternalError        = 5000
 	CodeSystemBusy           = 5001
 )

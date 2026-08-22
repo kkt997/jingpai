@@ -76,6 +76,10 @@ func (h *Handler) UpdateProduct(c *gin.Context) {
 		response.Forbidden(c, "无权修改")
 		return
 	}
+	if h.productHasRunningAuction(product.ID) {
+		response.BadRequest(c, "商品有待开始或进行中的竞拍，无法编辑")
+		return
+	}
 
 	var req CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -105,6 +109,10 @@ func (h *Handler) DeleteProduct(c *gin.Context) {
 		response.Forbidden(c, "无权删除")
 		return
 	}
+	if h.productHasRunningAuction(product.ID) {
+		response.BadRequest(c, "商品有待开始或进行中的竞拍，无法删除")
+		return
+	}
 
 	product.Status = model.ProductRemoved
 	h.db.Save(&product)
@@ -132,6 +140,18 @@ func (h *Handler) ListProduct(c *gin.Context) {
 	product.Status = model.ProductListed
 	h.db.Save(&product)
 	response.OK(c, product)
+}
+
+func (h *Handler) productHasRunningAuction(productID uint) bool {
+	var count int64
+	h.db.Model(&model.Auction{}).
+		Where("product_id = ? AND status IN ?", productID, []string{
+			string(model.StatusPending),
+			string(model.StatusActive),
+			string(model.StatusExtended),
+		}).
+		Count(&count)
+	return count > 0
 }
 
 func (h *Handler) UnlistProduct(c *gin.Context) {

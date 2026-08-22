@@ -1,0 +1,12 @@
+./auction.go
+./auth.go
+./conversation.go
+./deposit.go
+./follow.go
+./order.go
+./product.go
+./room.go
+./router.go
+./upload.go
+./websocket.go
+./ws_handler.go

@@ -5,7 +5,7 @@ interface ShowcaseState {
   showcaseItems: ShowcaseItem[];
   loading: boolean;
   loadShowcase: (roomId: number) => Promise<void>;
-  onNewBid: (currentPrice: number) => void;
+  onNewBid: (currentPrice?: number) => void;
   onAuctionStart: (data: any) => void;
   onAuctionEnd: (data: any) => void;
   reset: () => void;
@@ -27,6 +27,7 @@ export const useShowcaseStore = create<ShowcaseState>((set) => ({
   },
 
   onNewBid: (currentPrice) => {
+    if (currentPrice == null) return;
     set((state) => ({
       showcaseItems: state.showcaseItems.map((item) =>
         item.status === 'ACTIVE' || item.status === 'EXTENDED'

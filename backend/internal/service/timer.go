@@ -75,6 +75,8 @@ func NewAuctionTimer(
 // Start begins the periodic countdown_sync broadcaster.
 func (t *AuctionTimer) Start() {
 	go t.countdownSyncLoop()
+	go t.recoverActiveAuctions()
+	go t.timerSafetyScanLoop()
 }
 
 // Stop gracefully stops all timers and the sync loop.
@@ -90,31 +92,47 @@ func (t *AuctionTimer) Stop() {
 
 // StartAuction registers a new auction timer. Called when a merchant starts an auction.
 func (t *AuctionTimer) StartAuction(auction *model.Auction) {
-	endTime := time.Now().Add(time.Duration(auction.DurationSeconds) * time.Second)
-	endTimeMs := endTime.UnixMilli()
-	duration := time.Until(endTime)
+	endTimeMs := time.Now().Add(time.Duration(auction.DurationSeconds) * time.Second).UnixMilli()
+	if auction.ScheduledEnd != nil {
+		endTimeMs = auction.ScheduledEnd.UnixMilli()
+	}
+	t.StartAuctionAt(auction, endTimeMs)
+}
 
+// StartAuctionAt registers a timer using the authoritative end time from Redis/DB.
+func (t *AuctionTimer) StartAuctionAt(auction *model.Auction, endTimeMs int64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.startAuctionLocked(auction.ID, auction.RoomID, endTimeMs)
+}
+
+func (t *AuctionTimer) startAuctionLocked(auctionID, roomID uint, endTimeMs int64) {
+	duration := time.Until(time.UnixMilli(endTimeMs))
+	if duration < 0 {
+		duration = 0
+	}
 
 	// Cancel existing timer if any
-	if existing, ok := t.timers[auction.ID]; ok {
+	_, existed := t.timers[auctionID]
+	if existing, ok := t.timers[auctionID]; ok {
 		existing.timer.Stop()
 	}
 
 	entry := &auctionTimerEntry{
-		auctionID: auction.ID,
-		roomID:    auction.RoomID,
+		auctionID: auctionID,
+		roomID:    roomID,
 		endTime:   endTimeMs,
 	}
 	entry.timer = time.AfterFunc(duration, func() {
-		t.onTimeout(auction.ID)
+		t.onTimeout(auctionID)
 	})
-	t.timers[auction.ID] = entry
+	t.timers[auctionID] = entry
 
-	metrics.AuctionsActive.Inc()
+	if !existed {
+		metrics.AuctionsActive.Inc()
+	}
 	zap.L().Info("auction timer started",
-		zap.Uint("auctionId", auction.ID),
+		zap.Uint("auctionId", auctionID),
 		zap.Duration("duration", duration),
 		zap.Int64("endTime", endTimeMs),
 	)
@@ -123,10 +141,10 @@ func (t *AuctionTimer) StartAuction(auction *model.Auction) {
 // ExtendTimer resets the timer to a new end time. Called when a bid triggers extension.
 func (t *AuctionTimer) ExtendTimer(auctionID uint, newEndTimeMs int64) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	entry, ok := t.timers[auctionID]
 	if !ok {
+		t.mu.Unlock()
 		zap.L().Warn("extend timer for unknown auction", zap.Uint("auctionId", auctionID))
 		return
 	}
@@ -136,6 +154,7 @@ func (t *AuctionTimer) ExtendTimer(auctionID uint, newEndTimeMs int64) {
 
 	remaining := time.Until(time.UnixMilli(newEndTimeMs))
 	if remaining <= 0 {
+		t.mu.Unlock()
 		go t.onTimeout(auctionID)
 		return
 	}
@@ -143,6 +162,15 @@ func (t *AuctionTimer) ExtendTimer(auctionID uint, newEndTimeMs int64) {
 	entry.timer = time.AfterFunc(remaining, func() {
 		t.onTimeout(auctionID)
 	})
+	t.mu.Unlock()
+
+	t.db.Model(&model.Auction{}).
+		Where("id = ? AND status IN ?", auctionID, []string{string(model.StatusActive), string(model.StatusExtended)}).
+		Updates(map[string]any{
+			"status":        model.StatusExtended,
+			"scheduled_end": time.UnixMilli(newEndTimeMs),
+			"extend_count":  gorm.Expr("extend_count + 1"),
+		})
 
 	zap.L().Info("auction timer extended",
 		zap.Uint("auctionId", auctionID),
@@ -171,6 +199,82 @@ func (t *AuctionTimer) GetEndTime(auctionID uint) int64 {
 	return 0
 }
 
+func (t *AuctionTimer) recoverActiveAuctions() {
+	// Give DB/Redis migrations and seed work a short moment to settle.
+	time.Sleep(500 * time.Millisecond)
+	ctx := context.Background()
+
+	var auctions []model.Auction
+	if err := t.db.Where("status IN ?", []string{string(model.StatusActive), string(model.StatusExtended)}).
+		Find(&auctions).Error; err != nil {
+		zap.L().Error("failed to load active auctions for timer recovery", zap.Error(err))
+		return
+	}
+
+	for i := range auctions {
+		t.restoreTimerForAuction(ctx, &auctions[i])
+	}
+}
+
+func (t *AuctionTimer) timerSafetyScanLoop() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-t.stopSync:
+			return
+		case <-ticker.C:
+			ctx := context.Background()
+			var auctions []model.Auction
+			if err := t.db.Where("status IN ?", []string{string(model.StatusActive), string(model.StatusExtended)}).
+				Find(&auctions).Error; err != nil {
+				zap.L().Warn("timer safety scan failed to load auctions", zap.Error(err))
+				continue
+			}
+			for i := range auctions {
+				t.restoreTimerForAuction(ctx, &auctions[i])
+			}
+		}
+	}
+}
+
+func (t *AuctionTimer) restoreTimerForAuction(ctx context.Context, auction *model.Auction) {
+	_, endTime, status, _, err := t.bidService.GetAuctionState(ctx, auction.ID)
+	if err != nil {
+		rebuiltEndTime, rebuildErr := t.bidService.RebuildAuctionState(ctx, auction)
+		if rebuildErr != nil {
+			zap.L().Error("failed to rebuild auction redis state",
+				zap.Uint("auctionId", auction.ID),
+				zap.Error(rebuildErr),
+			)
+			return
+		}
+		endTime = rebuiltEndTime
+		status = string(auction.Status)
+		zap.L().Warn("rebuilt missing auction redis state",
+			zap.Uint("auctionId", auction.ID),
+			zap.Int64("endTime", endTime),
+		)
+	}
+	if status != string(model.StatusActive) && status != string(model.StatusExtended) {
+		return
+	}
+
+	t.mu.Lock()
+	existing, exists := t.timers[auction.ID]
+	if exists && existing.endTime == endTime {
+		t.mu.Unlock()
+		return
+	}
+	t.startAuctionLocked(auction.ID, auction.RoomID, endTime)
+	t.mu.Unlock()
+
+	if endTime <= time.Now().UnixMilli() {
+		go t.onTimeout(auction.ID)
+	}
+}
+
 // onTimeout is called when an auction timer expires.
 func (t *AuctionTimer) onTimeout(auctionID uint) {
 	ctx := context.Background()
@@ -188,11 +292,23 @@ func (t *AuctionTimer) onTimeout(auctionID uint) {
 
 	zap.L().Info("auction timeout", zap.Uint("auctionId", auctionID))
 
-	// Double-check from Redis — another bid may have extended it
+	// Load auction from DB
+	var auction model.Auction
+	if err := t.db.First(&auction, auctionID).Error; err != nil {
+		zap.L().Error("failed to load auction on timeout", zap.Error(err))
+		return
+	}
+
+	// Double-check from Redis — another bid may have extended it.
 	_, redisEndTime, redisStatus, _, err := t.bidService.GetAuctionState(ctx, auctionID)
 	if err != nil {
-		zap.L().Error("failed to get auction state on timeout", zap.Error(err))
-		return
+		rebuiltEndTime, rebuildErr := t.bidService.RebuildAuctionState(ctx, &auction)
+		if rebuildErr != nil {
+			zap.L().Error("failed to get or rebuild auction state on timeout", zap.Error(rebuildErr))
+			return
+		}
+		redisEndTime = rebuiltEndTime
+		redisStatus = string(auction.Status)
 	}
 
 	// If Redis shows it's already completed/extended with a new end time, abort
@@ -217,13 +333,6 @@ func (t *AuctionTimer) onTimeout(auctionID uint) {
 
 	if redisStatus != "ACTIVE" && redisStatus != "EXTENDED" {
 		// Already ended (e.g. ceiling hit), nothing to do
-		return
-	}
-
-	// Load auction from DB
-	var auction model.Auction
-	if err := t.db.First(&auction, auctionID).Error; err != nil {
-		zap.L().Error("failed to load auction on timeout", zap.Error(err))
 		return
 	}
 
@@ -271,16 +380,14 @@ func (t *AuctionTimer) onTimeout(auctionID uint) {
 	metrics.AuctionCompletions.WithLabelValues(string(newStatus)).Inc()
 
 	if newStatus == model.StatusCompleted {
-		go t.generateOrder(ctx, &auction)
-		// Deduct winner's deposit and refund all other participants
 		winnerID := t.getWinnerID(ctx, auctionID)
 		if winnerID > 0 {
-			t.depositService.DeductWinner(ctx, auctionID, winnerID)
+			go t.handleAuctionCompleted(context.Background(), &auction, winnerID)
 		}
-		go t.refundAllDeposits(ctx, auctionID)
 	} else if newStatus == model.StatusFailed {
 		go t.refundAllDeposits(ctx, auctionID)
 	}
+	t.bidService.CleanupAuctionState(ctx, auctionID)
 
 	zap.L().Info("auction ended",
 		zap.Uint("auctionId", auctionID),
@@ -335,18 +442,18 @@ func (t *AuctionTimer) getWinnerID(ctx context.Context, auctionID uint) uint {
 	return parseUint(val)
 }
 
-// generateOrder creates an order when auction completes.
-func (t *AuctionTimer) generateOrder(ctx context.Context, auction *model.Auction) {
-	winnerID := t.getWinnerID(ctx, auction.ID)
-	if winnerID == 0 {
+func (t *AuctionTimer) handleAuctionCompleted(ctx context.Context, auction *model.Auction, winnerID uint) {
+	if _, err := t.orderService.CreateFromAuction(ctx, auction, winnerID); err != nil {
+		zap.L().Error("failed to create order for completed auction",
+			zap.Error(err),
+			zap.Uint("auctionId", auction.ID),
+			zap.Uint("winnerId", winnerID),
+		)
 		return
 	}
 
-	_, err := t.orderService.CreateFromAuction(ctx, auction, winnerID)
-	if err != nil {
-		zap.L().Error("failed to create order via OrderService",
-			zap.Error(err), zap.Uint("auctionId", auction.ID))
-	}
+	t.depositService.DeductWinner(ctx, auction.ID, winnerID)
+	t.refundAllDeposits(ctx, auction.ID)
 }
 
 // refundAllDeposits refunds all deposits when auction fails, is cancelled, or auto-refund is triggered.
@@ -402,6 +509,94 @@ func (t *AuctionTimer) broadcastCountdownSync() {
 			Ts: now,
 		})
 	}
+}
+
+// EndAuctionNow forcefully ends an auction because its live room ended.
+func (t *AuctionTimer) EndAuctionNow(ctx context.Context, auctionID uint, reason string) error {
+	t.mu.Lock()
+	entry, hadTimer := t.timers[auctionID]
+	if hadTimer {
+		entry.timer.Stop()
+		delete(t.timers, auctionID)
+	}
+	t.mu.Unlock()
+
+	var auction model.Auction
+	if err := t.db.WithContext(ctx).First(&auction, auctionID).Error; err != nil {
+		return err
+	}
+	if auction.IsTerminal() {
+		return nil
+	}
+
+	newStatus := model.StatusCancelled
+	currentPrice := auction.CurrentPrice.InexactFloat64()
+	bidCount := int(auction.BidCount)
+	var winnerID uint
+
+	if auction.Status == model.StatusActive || auction.Status == model.StatusExtended {
+		statePrice, _, _, stateBidCount, stateErr := t.bidService.GetAuctionState(ctx, auctionID)
+		if stateErr != nil {
+			if _, rebuildErr := t.bidService.RebuildAuctionState(ctx, &auction); rebuildErr != nil {
+				return rebuildErr
+			}
+			statePrice, _, _, stateBidCount, stateErr = t.bidService.GetAuctionState(ctx, auctionID)
+		}
+		if stateErr == nil {
+			currentPrice = statePrice
+			bidCount = stateBidCount
+		}
+		winnerID = t.getWinnerID(ctx, auctionID)
+		if bidCount > 0 && winnerID > 0 {
+			newStatus = model.StatusCompleted
+		} else {
+			newStatus = model.StatusFailed
+		}
+	}
+
+	now := time.Now()
+	auction.Status = newStatus
+	auction.CurrentPrice = decimalFromFloat(currentPrice)
+	auction.BidCount = uint(bidCount)
+
+	updates := map[string]any{
+		"status":        newStatus,
+		"current_price": auction.CurrentPrice,
+		"bid_count":     auction.BidCount,
+		"actual_end":    now,
+	}
+	if newStatus == model.StatusCompleted {
+		updates["winner_id"] = winnerID
+		auction.WinnerID = &winnerID
+	} else if newStatus == model.StatusCancelled {
+		updates["cancel_reason"] = reason
+		auction.CancelReason = reason
+	}
+	if err := t.db.WithContext(ctx).Model(&model.Auction{}).
+		Where("id = ? AND status IN ?", auctionID, []string{
+			string(model.StatusPending),
+			string(model.StatusActive),
+			string(model.StatusExtended),
+		}).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+
+	roomID := auction.RoomID
+	if hadTimer {
+		roomID = entry.roomID
+		metrics.AuctionsActive.Dec()
+	}
+	t.broadcastAuctionEnd(ctx, roomID, auctionID, &auction, newStatus)
+
+	if newStatus == model.StatusCompleted && winnerID > 0 {
+		go t.handleAuctionCompleted(context.Background(), &auction, winnerID)
+	} else {
+		go t.refundAllDeposits(context.Background(), auctionID)
+	}
+	t.bidService.CleanupAuctionState(ctx, auctionID)
+	metrics.AuctionCompletions.WithLabelValues(string(newStatus)).Inc()
+	return nil
 }
 
 // CompleteByCeiling handles full side-effects when a bid hits the ceiling price:
@@ -465,11 +660,8 @@ func (t *AuctionTimer) CompleteByCeiling(auctionID uint, winnerID uint, finalPri
 	auction.WinnerID = &winnerID
 	t.broadcastAuctionEnd(ctx, roomID, auctionID, &auction, newStatus)
 
-	// Generate order
-	go t.generateOrder(ctx, &auction)
-
-	// Refund all deposits after auction end; guarantee fund is platform-managed
-	go t.refundAllDeposits(ctx, auctionID)
+	go t.handleAuctionCompleted(context.Background(), &auction, winnerID)
+	t.bidService.CleanupAuctionState(ctx, auctionID)
 
 	metrics.AuctionsActive.Dec()
 	metrics.AuctionCompletions.WithLabelValues("COMPLETED_CEILING").Inc()

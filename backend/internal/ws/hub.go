@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"jingpai/internal/metrics"
+	"jingpai/internal/pkg/errcode"
 )
 
 type Hub struct {
@@ -131,7 +132,7 @@ func (h *Hub) HandleMessage(client *Client, msg *ClientMessage) {
 	case MsgJoinRoom:
 		var payload JoinRoomPayload
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: 4010, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
+			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: errcode.CodeInvalidPayload, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
 			return
 		}
 		if h.msgHandler != nil {
@@ -150,7 +151,7 @@ func (h *Hub) HandleMessage(client *Client, msg *ClientMessage) {
 	case MsgBid:
 		var payload BidPayload
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: 4010, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
+			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: errcode.CodeInvalidPayload, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
 			return
 		}
 		if h.msgHandler != nil {
@@ -160,7 +161,7 @@ func (h *Hub) HandleMessage(client *Client, msg *ClientMessage) {
 	case MsgChat:
 		var payload ChatPayload
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: 4010, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
+			client.SendMessage(ServerMessage{Type: MsgError, Seq: msg.Seq, Code: errcode.CodeInvalidPayload, Msg: "invalid payload", Ts: time.Now().UnixMilli()})
 			return
 		}
 		if h.msgHandler != nil {

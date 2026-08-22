@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"jingpai/internal/model"
 )
@@ -62,8 +63,23 @@ func (s *OrderService) CreateFromAuction(ctx context.Context, auction *model.Auc
 		ExpireTime: time.Now().Add(s.paymentTimeout),
 	}
 
-	if err := s.db.Create(order).Error; err != nil {
-		return nil, fmt.Errorf("create order failed: %w", err)
+	result := s.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "auction_id"}},
+		DoNothing: true,
+	}).Create(order)
+	if result.Error != nil {
+		var existingAfterConflict model.Order
+		if err := s.db.Where("auction_id = ?", auction.ID).First(&existingAfterConflict).Error; err == nil {
+			return &existingAfterConflict, nil
+		}
+		return nil, fmt.Errorf("create order failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		var existingAfterConflict model.Order
+		if err := s.db.Where("auction_id = ?", auction.ID).First(&existingAfterConflict).Error; err == nil {
+			return &existingAfterConflict, nil
+		}
+		return nil, fmt.Errorf("create order skipped but existing order not found")
 	}
 
 	// Update product status to SOLD

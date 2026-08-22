@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm/clause"
 
 	"jingpai/internal/model"
 	"jingpai/internal/pkg/response"
@@ -46,6 +47,45 @@ func (h *Handler) CreateAuction(c *gin.Context) {
 	}
 	if product.Status != model.ProductListed {
 		response.BadRequest(c, "商品未上架，请先上架商品")
+		return
+	}
+
+	var room model.LiveRoom
+	if err := h.db.First(&room, req.RoomID).Error; err != nil {
+		response.BadRequest(c, "直播间不存在")
+		return
+	}
+	if room.MerchantID != merchantID.(uint) {
+		response.Forbidden(c, "无权使用该直播间")
+		return
+	}
+	if room.Status == model.RoomEnded {
+		response.BadRequest(c, "直播间已结束，无法创建竞拍")
+		return
+	}
+
+	var productAuctionCount int64
+	h.db.Model(&model.Auction{}).
+		Where("product_id = ? AND status IN ?", req.ProductID, []string{
+			string(model.StatusPending),
+			string(model.StatusActive),
+			string(model.StatusExtended),
+		}).
+		Count(&productAuctionCount)
+	if productAuctionCount > 0 {
+		response.BadRequest(c, "该商品已有待开始或进行中的竞拍")
+		return
+	}
+
+	var activeRoomAuctionCount int64
+	h.db.Model(&model.Auction{}).
+		Where("room_id = ? AND status IN ?", req.RoomID, []string{
+			string(model.StatusActive),
+			string(model.StatusExtended),
+		}).
+		Count(&activeRoomAuctionCount)
+	if activeRoomAuctionCount > 0 {
+		response.BadRequest(c, "该直播间已有进行中的竞拍")
 		return
 	}
 
@@ -90,6 +130,8 @@ func (h *Handler) ListRoomShowcase(c *gin.Context) {
 		response.BadRequest(c, "请选择直播间")
 		return
 	}
+	userID, _ := c.Get("userID")
+	viewerID := userID.(uint)
 
 	var auctions []model.Auction
 	if err := h.db.
@@ -116,10 +158,13 @@ func (h *Handler) ListRoomShowcase(c *gin.Context) {
 			"id":            auction.ID,
 			"productId":     auction.ProductID,
 			"product":       auction.Product,
+			"mode":          auction.Mode,
 			"status":        auction.Status,
 			"startingPrice": auction.StartingPrice.InexactFloat64(),
-			"currentPrice":  auction.CurrentPrice.InexactFloat64(),
 			"sequence":      i + 1,
+		}
+		if service.CanViewAuctionPrices(&auction, viewerID) {
+			item["currentPrice"] = auction.CurrentPrice.InexactFloat64()
 		}
 		if auction.IsTerminal() {
 			item["finalPrice"] = auction.CurrentPrice.InexactFloat64()
@@ -162,17 +207,14 @@ func (h *Handler) ListAuctions(c *gin.Context) {
 
 	query.Find(&auctions)
 
-	// Blind mode desensitization for non-merchant viewers
 	userID, _ := c.Get("userID")
 	uid := userID.(uint)
+	items := make([]map[string]any, 0, len(auctions))
 	for i := range auctions {
-		if auctions[i].Mode == model.ModeBlind && !auctions[i].IsTerminal() && auctions[i].MerchantID != uid {
-			auctions[i].CurrentPrice = decimal.Zero
-			auctions[i].WinnerID = nil
-		}
+		items = append(items, service.BuildAuctionView(&auctions[i], uid))
 	}
 
-	response.OK(c, auctions)
+	response.OK(c, items)
 }
 
 func (h *Handler) GetAuction(c *gin.Context) {
@@ -183,16 +225,8 @@ func (h *Handler) GetAuction(c *gin.Context) {
 		return
 	}
 
-	// Blind mode: hide current price and winner from non-owners while active
-	if auction.Mode == model.ModeBlind && !auction.IsTerminal() {
-		userID, _ := c.Get("userID")
-		if userID.(uint) != auction.MerchantID {
-			auction.CurrentPrice = decimal.Zero
-			auction.WinnerID = nil
-		}
-	}
-
-	response.OK(c, auction)
+	userID, _ := c.Get("userID")
+	response.OK(c, service.BuildAuctionView(&auction, userID.(uint)))
 }
 
 func (h *Handler) UpdateAuction(c *gin.Context) {
@@ -242,72 +276,158 @@ func (h *Handler) UpdateAuction(c *gin.Context) {
 func (h *Handler) StartAuction(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	merchantID, _ := c.Get("userID")
+	ctx := c.Request.Context()
 
 	var auction model.Auction
-	if err := h.db.First(&auction, id).Error; err != nil {
+	tx := h.db.Begin()
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&auction, id).Error; err != nil {
+		tx.Rollback()
 		response.NotFound(c, "竞拍不存在")
 		return
 	}
 	if auction.MerchantID != merchantID.(uint) {
+		tx.Rollback()
 		response.Forbidden(c, "无权操作")
 		return
 	}
 	if auction.Status != model.StatusPending {
+		tx.Rollback()
 		response.BadRequest(c, "竞拍状态不允许开始")
 		return
 	}
 
+	var room model.LiveRoom
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&room, auction.RoomID).Error; err != nil {
+		tx.Rollback()
+		response.BadRequest(c, "直播间不存在")
+		return
+	}
+	if room.Status != model.RoomLive {
+		tx.Rollback()
+		response.BadRequest(c, "直播间未开播，无法开始竞拍")
+		return
+	}
+
+	var activeCount int64
+	if err := tx.Model(&model.Auction{}).
+		Where("room_id = ? AND id <> ? AND status IN ?", auction.RoomID, auction.ID, []string{
+			string(model.StatusActive),
+			string(model.StatusExtended),
+		}).
+		Count(&activeCount).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "校验直播间竞拍状态失败")
+		return
+	}
+	if activeCount > 0 {
+		tx.Rollback()
+		response.BadRequest(c, "该直播间已有进行中的竞拍")
+		return
+	}
+
 	// Trigger FSM transition
-	ctx := c.Request.Context()
 	auctionCtx := &service.AuctionContext{Auction: &auction}
 	newStatus, err := h.auctionFSM.Trigger(auctionCtx, service.EventStart)
 	if err != nil {
+		tx.Rollback()
 		response.ServerError(c, "状态转换失败: "+err.Error())
 		return
 	}
 
-	// Update DB status + actual start time
 	now := time.Now()
-	h.db.Model(&auction).Updates(map[string]interface{}{
-		"status":       newStatus,
-		"actual_start": now,
-	})
+	scheduledEnd := now.Add(time.Duration(auction.DurationSeconds) * time.Second)
+	auction.Status = newStatus
+	auction.ActualStart = &now
+	auction.ScheduledEnd = &scheduledEnd
 
 	// Initialize Redis auction state
 	if err := h.bidService.InitAuctionState(ctx, &auction); err != nil {
+		tx.Rollback()
+		h.bidService.CleanupAuctionState(ctx, auction.ID)
 		response.ServerError(c, "初始化竞拍状态失败")
 		return
 	}
 	h.bidService.SetAuctionParams(ctx, &auction)
 
+	result := tx.Model(&model.Auction{}).
+		Where("id = ? AND status = ?", auction.ID, model.StatusPending).
+		Updates(map[string]interface{}{
+			"status":        newStatus,
+			"actual_start":  now,
+			"scheduled_end": scheduledEnd,
+		})
+	if result.Error != nil {
+		tx.Rollback()
+		h.bidService.CleanupAuctionState(ctx, auction.ID)
+		response.ServerError(c, "开始竞拍失败")
+		return
+	}
+	if result.RowsAffected != 1 {
+		tx.Rollback()
+		h.bidService.CleanupAuctionState(ctx, auction.ID)
+		response.BadRequest(c, "竞拍状态已变化，请刷新后重试")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		h.bidService.CleanupAuctionState(ctx, auction.ID)
+		response.ServerError(c, "开始竞拍失败")
+		return
+	}
+
+	h.db.Preload("Product").Preload("Room").First(&auction, auction.ID)
+
 	// Start countdown timer
-	h.auctionTimer.StartAuction(&auction)
+	h.auctionTimer.StartAuctionAt(&auction, scheduledEnd.UnixMilli())
 
 	// Broadcast auction_start to room
 	if room := h.hub.GetRoom(auction.RoomID); room != nil {
-		room.Broadcast(ws.ServerMessage{
-			Type: ws.MsgAuctionStart,
-			Code: 0,
-			Data: map[string]any{
-				"auctionId":       auction.ID,
-				"productId":       auction.ProductID,
-				"mode":            auction.Mode,
-				"startingPrice":   auction.StartingPrice.InexactFloat64(),
-				"incrementAmount": auction.IncrementAmount.InexactFloat64(),
-				"durationSeconds": auction.DurationSeconds,
-				"endTime":         h.auctionTimer.GetEndTime(auction.ID),
-				"serverTime":      time.Now().UnixMilli(),
-				"depositRequired": auction.DepositAmount.IsPositive(),
-				"depositAmount":   auction.DepositAmount.InexactFloat64(),
-			},
-			Ts: time.Now().UnixMilli(),
+		endTime := scheduledEnd.UnixMilli()
+		room.BroadcastFiltered(func(viewerUserID uint) ws.ServerMessage {
+			return ws.ServerMessage{
+				Type: ws.MsgAuctionStart,
+				Code: 0,
+				Data: h.buildAuctionStartPayload(&auction, viewerUserID, endTime),
+				Ts:   time.Now().UnixMilli(),
+			}
 		})
 	}
 
 	response.OK(c, map[string]any{
 		"status":  newStatus,
-		"endTime": h.auctionTimer.GetEndTime(auction.ID),
+		"endTime": scheduledEnd.UnixMilli(),
 	})
+}
+
+func (h *Handler) buildAuctionStartPayload(auction *model.Auction, viewerUserID uint, endTime int64) map[string]any {
+	auctionView := service.BuildAuctionView(auction, viewerUserID)
+	auctionView["status"] = auction.Status
+	auctionView["endTime"] = endTime
+	auctionView["bidCount"] = auction.BidCount
+	auctionView["serverTime"] = time.Now().UnixMilli()
+	auctionView["depositRequired"] = auction.DepositAmount.IsPositive()
+	auctionView["depositAmount"] = auction.DepositAmount.InexactFloat64()
+
+	data := map[string]any{
+		"auction":         auctionView,
+		"auctionId":       auction.ID,
+		"id":              auction.ID,
+		"productId":       auction.ProductID,
+		"product":         auction.Product,
+		"productTitle":    auction.Product.Title,
+		"mode":            auction.Mode,
+		"status":          auction.Status,
+		"startingPrice":   auction.StartingPrice.InexactFloat64(),
+		"incrementAmount": auction.IncrementAmount.InexactFloat64(),
+		"durationSeconds": auction.DurationSeconds,
+		"endTime":         endTime,
+		"serverTime":      time.Now().UnixMilli(),
+		"depositRequired": auction.DepositAmount.IsPositive(),
+		"depositAmount":   auction.DepositAmount.InexactFloat64(),
+	}
+	if service.CanViewAuctionPrices(auction, viewerUserID) {
+		data["currentPrice"] = auction.CurrentPrice.InexactFloat64()
+	}
+	return data
 }
 
 func (h *Handler) CancelAuction(c *gin.Context) {

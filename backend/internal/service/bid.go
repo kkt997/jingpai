@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"jingpai/internal/config"
 	"jingpai/internal/metrics"
@@ -32,9 +35,6 @@ type BidService struct {
 	// L2: dedup map to prevent double-click bids
 	dedupMap sync.Map // map[string]int64 (key → timestamp ms)
 
-	// async persistence channel
-	persistCh chan *model.Bid
-
 	cfg *config.AuctionConfig
 }
 
@@ -47,7 +47,7 @@ type cachedAuctionState struct {
 
 // LuaBidResult maps the JSON returned by bid.lua
 type LuaBidResult struct {
-	Code       int   `json:"code"`
+	Code       int    `json:"code"`
 	Msg        string `json:"msg,omitempty"`
 	Extended   bool   `json:"extended"`
 	HitCeiling bool   `json:"hit_ceiling"`
@@ -55,6 +55,7 @@ type LuaBidResult struct {
 	FinalPrice int64  `json:"final_price"`
 	BidCount   int    `json:"bid_count"`
 	Rank       int    `json:"rank"`
+	StreamID   string `json:"stream_id,omitempty"`
 	// only present on code=-1
 	CurrentPrice int64 `json:"current_price,omitempty"`
 }
@@ -64,12 +65,15 @@ const (
 -- Atomic bid script
 -- KEYS[1] = auction:{id}:state
 -- KEYS[2] = auction:{id}:ranking
+-- KEYS[3] = auction:{id}:bid_stream
+-- KEYS[4] = auction:bid_streams
 -- ARGV[1] = bid amount (cents)
 -- ARGV[2] = user ID
 -- ARGV[3] = current timestamp (ms)
 -- ARGV[4] = auto extend seconds
 -- ARGV[5] = increment amount (cents)
 -- ARGV[6] = ceiling price (cents), 0 = no ceiling
+-- ARGV[7] = auction ID
 
 local current_price = tonumber(redis.call('HGET', KEYS[1], 'current_price'))
 local end_time = tonumber(redis.call('HGET', KEYS[1], 'end_time'))
@@ -113,6 +117,16 @@ redis.call('HSET', KEYS[1], 'current_price', new_bid)
 redis.call('HSET', KEYS[1], 'winner_id', ARGV[2])
 redis.call('HINCRBY', KEYS[1], 'bid_count', 1)
 redis.call('ZADD', KEYS[2], new_bid, ARGV[2])
+redis.call('SADD', KEYS[4], KEYS[3])
+local stream_id = redis.call(
+    'XADD',
+    KEYS[3],
+    '*',
+    'auction_id', ARGV[7],
+    'user_id', ARGV[2],
+    'amount_cents', new_bid,
+    'bid_time_ms', now
+)
 
 -- Calculate extension
 local extended = false
@@ -152,13 +166,17 @@ return cjson.encode({
     new_end_time = new_end_time,
     final_price = new_bid,
     bid_count = bid_count,
-    rank = rank
+    rank = rank,
+    stream_id = stream_id
 })
 `
 
 	persistBufferSize = 4096
 	dedupWindowMs     = 500
 	stateCacheTTLMs   = 1000
+	bidStreamSetKey   = "auction:bid_streams"
+	bidStreamGroup    = "bid-persistors"
+	bidStreamConsumer = "server"
 )
 
 func NewBidService(rdb *redis.Client, db *gorm.DB, aliasService *AliasService, cfg *config.AuctionConfig) *BidService {
@@ -167,10 +185,9 @@ func NewBidService(rdb *redis.Client, db *gorm.DB, aliasService *AliasService, c
 		db:           db,
 		aliasService: aliasService,
 		bidScript:    redis.NewScript(bidLuaScript),
-		persistCh:    make(chan *model.Bid, persistBufferSize),
 		cfg:          cfg,
 	}
-	go s.persistWorker()
+	go s.streamPersistWorker()
 	go s.dedupCleaner()
 	return s
 }
@@ -223,9 +240,6 @@ func (s *BidService) PlaceBid(ctx context.Context, auctionID, userID uint, amoun
 	if luaResult.Extended {
 		s.incrementExtendCount(ctx, auctionID)
 	}
-
-	// ── Async Persist to MySQL ──
-	s.asyncPersist(auctionID, userID, luaResult.FinalPrice)
 
 	// Update memory cache with latest state
 	s.updateStateCache(auctionID, luaResult)
@@ -298,10 +312,16 @@ func (s *BidService) InitAuctionState(ctx context.Context, auction *model.Auctio
 	rankKey := fmt.Sprintf("auction:%d:ranking", auction.ID)
 
 	startPriceCents := decimalToCents(auction.StartingPrice.InexactFloat64())
-	now := time.Now()
-	endTime := now.Add(time.Duration(auction.DurationSeconds) * time.Second).UnixMilli()
+	startTime := time.Now()
+	if auction.ActualStart != nil {
+		startTime = *auction.ActualStart
+	}
+	endTime := startTime.Add(time.Duration(auction.DurationSeconds) * time.Second).UnixMilli()
+	if auction.ScheduledEnd != nil {
+		endTime = auction.ScheduledEnd.UnixMilli()
+	}
 	// Total duration cap: max end time = start + 3× original duration
-	maxEndTime := now.Add(time.Duration(auction.DurationSeconds*3) * time.Second).UnixMilli()
+	maxEndTime := startTime.Add(time.Duration(auction.DurationSeconds*3) * time.Second).UnixMilli()
 
 	pipe := s.rdb.Pipeline()
 	pipe.HSet(ctx, stateKey, map[string]interface{}{
@@ -318,11 +338,74 @@ func (s *BidService) InitAuctionState(ctx context.Context, auction *model.Auctio
 	return err
 }
 
+// RebuildAuctionState restores Redis realtime state from DB data when Redis
+// state is missing after a restart or cache loss.
+func (s *BidService) RebuildAuctionState(ctx context.Context, auction *model.Auction) (int64, error) {
+	stateKey := fmt.Sprintf("auction:%d:state", auction.ID)
+	rankKey := fmt.Sprintf("auction:%d:ranking", auction.ID)
+
+	endTime := time.Now().UnixMilli()
+	if auction.ScheduledEnd != nil {
+		endTime = auction.ScheduledEnd.UnixMilli()
+	} else if auction.ActualStart != nil {
+		endTime = auction.ActualStart.Add(time.Duration(auction.DurationSeconds) * time.Second).UnixMilli()
+	}
+
+	startTime := time.Now()
+	if auction.ActualStart != nil {
+		startTime = *auction.ActualStart
+	}
+	maxEndTime := startTime.Add(time.Duration(auction.DurationSeconds*3) * time.Second).UnixMilli()
+
+	var bids []model.Bid
+	if err := s.db.WithContext(ctx).
+		Where("auction_id = ?", auction.ID).
+		Order("bid_time ASC").
+		Find(&bids).Error; err != nil {
+		return 0, err
+	}
+
+	currentPriceCents := decimalToCents(auction.StartingPrice.InexactFloat64())
+	var winnerID uint
+	for _, bid := range bids {
+		amountCents := decimalToCents(bid.Amount.InexactFloat64())
+		if amountCents >= currentPriceCents {
+			currentPriceCents = amountCents
+			winnerID = bid.UserID
+		}
+	}
+
+	pipe := s.rdb.Pipeline()
+	pipe.Del(ctx, rankKey)
+	for _, bid := range bids {
+		pipe.ZAdd(ctx, rankKey, redis.Z{
+			Score:  float64(decimalToCents(bid.Amount.InexactFloat64())),
+			Member: fmt.Sprintf("%d", bid.UserID),
+		})
+	}
+	pipe.HSet(ctx, stateKey, map[string]interface{}{
+		"current_price": currentPriceCents,
+		"end_time":      endTime,
+		"max_end_time":  maxEndTime,
+		"status":        string(auction.Status),
+		"winner_id":     winnerID,
+		"bid_count":     len(bids),
+		"extend_count":  auction.ExtendCount,
+	})
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, err
+	}
+	s.SetAuctionParams(ctx, auction)
+	return endTime, nil
+}
+
 // CleanupAuctionState removes Redis state for an ended/cancelled auction
 func (s *BidService) CleanupAuctionState(ctx context.Context, auctionID uint) {
 	stateKey := fmt.Sprintf("auction:%d:state", auctionID)
 	rankKey := fmt.Sprintf("auction:%d:ranking", auctionID)
-	s.rdb.Del(ctx, stateKey, rankKey)
+	incrementKey := fmt.Sprintf("auction:%d:increment", auctionID)
+	ceilingKey := fmt.Sprintf("auction:%d:ceiling", auctionID)
+	s.rdb.Del(ctx, stateKey, rankKey, incrementKey, ceilingKey)
 	s.stateCache.Delete(auctionID)
 }
 
@@ -434,6 +517,7 @@ func (s *BidService) checkRateLimit(ctx context.Context, userID, auctionID uint)
 func (s *BidService) executeLuaBid(ctx context.Context, auctionID, userID uint, amountCents int64) (*LuaBidResult, error) {
 	stateKey := fmt.Sprintf("auction:%d:state", auctionID)
 	rankKey := fmt.Sprintf("auction:%d:ranking", auctionID)
+	streamKey := s.bidStreamKey(auctionID)
 
 	// Get current extend count to calculate decayed extend seconds
 	extendCount := s.getExtendCount(ctx, auctionID)
@@ -446,13 +530,14 @@ func (s *BidService) executeLuaBid(ctx context.Context, auctionID, userID uint, 
 	now := time.Now().UnixMilli()
 
 	result, err := s.bidScript.Run(ctx, s.rdb,
-		[]string{stateKey, rankKey},
+		[]string{stateKey, rankKey, streamKey, bidStreamSetKey},
 		amountCents,
 		userID,
 		now,
 		extendSec,
 		incrementCents,
 		ceilingCents,
+		auctionID,
 	).Result()
 	if err != nil {
 		zap.L().Error("lua bid script failed", zap.Error(err), zap.Uint("auctionId", auctionID))
@@ -590,56 +675,182 @@ func (s *BidService) SetAuctionParams(ctx context.Context, auction *model.Auctio
 	s.rdb.Set(ctx, ceilingKey, ceilingCents, 24*time.Hour)
 }
 
-func (s *BidService) asyncPersist(auctionID, userID uint, amountCents int64) {
-	bid := &model.Bid{
-		AuctionID: auctionID,
-		UserID:    userID,
-		Amount:    decimal.NewFromInt(amountCents).Div(decimal.NewFromInt(100)),
-		BidTime:   time.Now(),
-		IsWinning: true,
-	}
-	select {
-	case s.persistCh <- bid:
-	default:
-		zap.L().Warn("persist channel full, bid may be lost",
-			zap.Uint("auctionId", auctionID),
-			zap.Uint("userId", userID),
-		)
-	}
+func (s *BidService) bidStreamKey(auctionID uint) string {
+	return fmt.Sprintf("auction:%d:bid_stream", auctionID)
 }
 
-func (s *BidService) persistWorker() {
-	batch := make([]*model.Bid, 0, 64)
-	ticker := time.NewTicker(200 * time.Millisecond)
+func (s *BidService) streamPersistWorker() {
+	ctx := context.Background()
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case bid, ok := <-s.persistCh:
-			if !ok {
-				s.flushBatch(batch)
-				return
-			}
-			batch = append(batch, bid)
-			if len(batch) >= 64 {
-				s.flushBatch(batch)
-				batch = batch[:0]
-			}
-		case <-ticker.C:
-			if len(batch) > 0 {
-				s.flushBatch(batch)
-				batch = batch[:0]
-			}
+	for range ticker.C {
+		streams, err := s.rdb.SMembers(ctx, bidStreamSetKey).Result()
+		if err != nil {
+			zap.L().Warn("failed to list bid streams", zap.Error(err))
+			continue
+		}
+		for _, stream := range streams {
+			s.consumeBidStream(ctx, stream)
 		}
 	}
 }
 
-func (s *BidService) flushBatch(bids []*model.Bid) {
-	if len(bids) == 0 {
+func (s *BidService) consumeBidStream(ctx context.Context, stream string) {
+	if err := s.ensureBidStreamGroup(ctx, stream); err != nil {
+		zap.L().Warn("failed to ensure bid stream group", zap.String("stream", stream), zap.Error(err))
 		return
 	}
-	if err := s.db.CreateInBatches(bids, 100).Error; err != nil {
-		zap.L().Error("failed to persist bids", zap.Error(err), zap.Int("count", len(bids)))
+
+	// First retry messages previously delivered to this stable consumer.
+	s.readBidStream(ctx, stream, "0")
+
+	// Then claim stale pending messages that may belong to a previous worker.
+	s.claimStaleBidMessages(ctx, stream)
+
+	// Finally consume new accepted bids.
+	s.readBidStream(ctx, stream, ">")
+}
+
+func (s *BidService) ensureBidStreamGroup(ctx context.Context, stream string) error {
+	err := s.rdb.XGroupCreateMkStream(ctx, stream, bidStreamGroup, "0").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		return err
+	}
+	return nil
+}
+
+func (s *BidService) readBidStream(ctx context.Context, stream, id string) {
+	streams, err := s.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    bidStreamGroup,
+		Consumer: bidStreamConsumer,
+		Streams:  []string{stream, id},
+		Count:    64,
+		Block:    -1,
+	}).Result()
+	if err == redis.Nil {
+		return
+	}
+	if err != nil {
+		zap.L().Warn("failed to read bid stream", zap.String("stream", stream), zap.String("id", id), zap.Error(err))
+		return
+	}
+
+	for _, xs := range streams {
+		for _, msg := range xs.Messages {
+			s.persistBidMessage(ctx, stream, msg)
+		}
+	}
+}
+
+func (s *BidService) claimStaleBidMessages(ctx context.Context, stream string) {
+	start := "0-0"
+	for {
+		messages, next, err := s.rdb.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+			Stream:   stream,
+			Group:    bidStreamGroup,
+			Consumer: bidStreamConsumer,
+			MinIdle:  5 * time.Second,
+			Start:    start,
+			Count:    64,
+		}).Result()
+		if err == redis.Nil {
+			return
+		}
+		if err != nil {
+			zap.L().Warn("failed to claim stale bid stream messages", zap.String("stream", stream), zap.Error(err))
+			return
+		}
+		for _, msg := range messages {
+			s.persistBidMessage(ctx, stream, msg)
+		}
+		if next == "0-0" || len(messages) == 0 {
+			return
+		}
+		start = next
+	}
+}
+
+func (s *BidService) persistBidMessage(ctx context.Context, stream string, msg redis.XMessage) {
+	bid, err := bidFromStreamMessage(stream, msg)
+	if err != nil {
+		zap.L().Error("invalid bid stream message", zap.String("stream", stream), zap.String("id", msg.ID), zap.Error(err))
+		return
+	}
+
+	err = s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "persist_key"}},
+		DoNothing: true,
+	}).Create(bid).Error
+	if err != nil {
+		zap.L().Error("failed to persist bid stream message",
+			zap.String("stream", stream),
+			zap.String("id", msg.ID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	if err := s.rdb.XAck(ctx, stream, bidStreamGroup, msg.ID).Err(); err != nil {
+		zap.L().Warn("failed to ack persisted bid message",
+			zap.String("stream", stream),
+			zap.String("id", msg.ID),
+			zap.Error(err),
+		)
+	}
+}
+
+func bidFromStreamMessage(stream string, msg redis.XMessage) (*model.Bid, error) {
+	auctionID, err := streamUint(msg.Values["auction_id"])
+	if err != nil {
+		return nil, fmt.Errorf("auction_id: %w", err)
+	}
+	userID, err := streamUint(msg.Values["user_id"])
+	if err != nil {
+		return nil, fmt.Errorf("user_id: %w", err)
+	}
+	amountCents, err := streamInt64(msg.Values["amount_cents"])
+	if err != nil {
+		return nil, fmt.Errorf("amount_cents: %w", err)
+	}
+	bidTimeMs, err := streamInt64(msg.Values["bid_time_ms"])
+	if err != nil {
+		return nil, fmt.Errorf("bid_time_ms: %w", err)
+	}
+
+	return &model.Bid{
+		AuctionID:  auctionID,
+		UserID:     userID,
+		Amount:     decimal.NewFromInt(amountCents).Div(decimal.NewFromInt(100)),
+		BidTime:    time.UnixMilli(bidTimeMs),
+		IsWinning:  true,
+		PersistKey: fmt.Sprintf("%s:%s", stream, msg.ID),
+	}, nil
+}
+
+func streamUint(v any) (uint, error) {
+	n, err := streamInt64(v)
+	if err != nil {
+		return 0, err
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("negative value %d", n)
+	}
+	return uint(n), nil
+}
+
+func streamInt64(v any) (int64, error) {
+	switch value := v.(type) {
+	case int64:
+		return value, nil
+	case int:
+		return int64(value), nil
+	case string:
+		return strconv.ParseInt(value, 10, 64)
+	case []byte:
+		return strconv.ParseInt(string(value), 10, 64)
+	default:
+		return 0, fmt.Errorf("unsupported value type %T", v)
 	}
 }
 

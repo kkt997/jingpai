@@ -63,6 +63,15 @@ func (h *WsMessageHandler) OnJoinRoom(client *ws.Client, payload *ws.JoinRoomPay
 		})
 		return err
 	}
+	if liveRoom.Status != model.RoomLive {
+		client.SendMessage(ws.ServerMessage{
+			Type: ws.MsgError,
+			Code: errcode.CodeRoomNotLive,
+			Msg:  "直播间未开播或已结束",
+			Ts:   time.Now().UnixMilli(),
+		})
+		return errcode.ErrRoomNotLive
+	}
 
 	// Connection guard: per-room limit
 	room := h.hub.GetOrCreateRoom(roomID)
@@ -151,6 +160,25 @@ func (h *WsMessageHandler) OnBid(client *ws.Client, payload *ws.BidPayload) erro
 			Type: ws.MsgBidResult,
 			Code: errcode.CodeInvalidPayload,
 			Msg:  "竞拍不属于当前直播间",
+			Ts:   now,
+		})
+		return nil
+	}
+	if auction.MerchantID == client.UserID {
+		client.SendMessage(ws.ServerMessage{
+			Type: ws.MsgBidResult,
+			Code: errcode.CodeForbidden,
+			Msg:  "商家不可参与自己的竞拍",
+			Ts:   now,
+		})
+		return nil
+	}
+	var liveRoom model.LiveRoom
+	if err := h.db.Select("id, status").First(&liveRoom, client.RoomID).Error; err != nil || liveRoom.Status != model.RoomLive {
+		client.SendMessage(ws.ServerMessage{
+			Type: ws.MsgBidResult,
+			Code: errcode.CodeRoomNotLive,
+			Msg:  "直播间未开播或已结束，无法出价",
 			Ts:   now,
 		})
 		return nil
@@ -299,43 +327,32 @@ func (h *WsMessageHandler) sendRoomState(ctx context.Context, client *ws.Client,
 			// Get user's alias
 			alias, _ := h.aliasService.GetOrAssign(ctx, auction.ID, client.UserID)
 
-			// Filter ranking based on auction mode
-			var rankingDTO []service.RankItemDTO
-			if auction.Mode == model.ModeOpen {
-				rankingDTO = h.buildOpenRanking(ranking, client.UserID)
-			} else {
-				rankingDTO = h.buildBlindRanking(ranking, client.UserID)
-			}
-
 			h.db.Preload("Product").First(&auction, auction.ID)
+			auctionView := service.BuildAuctionView(&auction, client.UserID)
+			if service.CanViewAuctionPrices(&auction, client.UserID) {
+				auctionView["currentPrice"] = currentPrice
+			}
 
 			depositRequired := auction.DepositAmount.IsPositive()
 			depositState := h.depositService.GetDepositStatus(ctx, client.UserID, auction.ID)
 			hasDeposit := !depositRequired || depositState["hasPaid"].(bool)
 
-			roomState["auction"] = map[string]any{
-				"id":              auction.ID,
-				"productId":       auction.ProductID,
-				"product":         auction.Product,
-				"productTitle":    auction.Product.Title,
-				"mode":            auction.Mode,
-				"status":          status,
-				"currentPrice":    currentPrice,
-				"endTime":         endTime,
-				"bidCount":        bidCount,
-				"ranking":         rankingDTO,
-				"myRank":          userRank,
-				"myAmount":        userAmount,
-				"myAlias":         alias,
-				"serverTime":      time.Now().UnixMilli(),
-				"incrementAmount": auction.IncrementAmount.InexactFloat64(),
-				"depositRequired": depositRequired,
-				"depositAmount":   auction.DepositAmount.InexactFloat64(),
-				"hasDeposit":      hasDeposit,
-				"depositStatus":   depositState["status"],
-				"canRefund":       depositState["canRefund"],
-				"refundHint":      depositState["refundHint"],
-			}
+			auctionView["productTitle"] = auction.Product.Title
+			auctionView["status"] = status
+			auctionView["endTime"] = endTime
+			auctionView["bidCount"] = bidCount
+			auctionView["ranking"] = service.RankingForViewer(&auction, ranking, client.UserID)
+			auctionView["myRank"] = userRank
+			auctionView["myAmount"] = userAmount
+			auctionView["myAlias"] = alias
+			auctionView["serverTime"] = time.Now().UnixMilli()
+			auctionView["depositRequired"] = depositRequired
+			auctionView["hasDeposit"] = hasDeposit
+			auctionView["depositStatus"] = depositState["status"]
+			auctionView["canRefund"] = depositState["canRefund"]
+			auctionView["refundHint"] = depositState["refundHint"]
+
+			roomState["auction"] = auctionView
 		}
 	}
 
@@ -377,45 +394,13 @@ func (h *WsMessageHandler) broadcastBidToRoom(
 		room,
 		mode,
 		merchantID,
+		bidder.UserID,
 		alias,
 		result.Amount,
 		result.CurrentPrice,
 		uint(bidCount),
 		ranking,
 	)
-}
-
-func (h *WsMessageHandler) buildOpenRanking(ranking []service.RankItem, viewerUserID uint) []service.RankItemDTO {
-	result := make([]service.RankItemDTO, len(ranking))
-	for i, item := range ranking {
-		amount := item.Amount
-		result[i] = service.RankItemDTO{
-			Rank:   item.Rank,
-			UserID: item.UserID,
-			Alias:  item.Alias,
-			Amount: &amount,
-			IsMe:   item.UserID == viewerUserID,
-		}
-	}
-	return result
-}
-
-func (h *WsMessageHandler) buildBlindRanking(ranking []service.RankItem, viewerUserID uint) []service.RankItemDTO {
-	result := make([]service.RankItemDTO, len(ranking))
-	for i, item := range ranking {
-		dto := service.RankItemDTO{
-			Rank:   item.Rank,
-			UserID: item.UserID,
-			Alias:  item.Alias,
-			IsMe:   item.UserID == viewerUserID,
-		}
-		if item.UserID == viewerUserID {
-			amount := item.Amount
-			dto.Amount = &amount
-		}
-		result[i] = dto
-	}
-	return result
 }
 
 func (h *WsMessageHandler) getExtendCount(ctx context.Context, auctionID uint) int {
@@ -436,4 +421,3 @@ func (h *WsMessageHandler) errToCode(err error) int {
 		return errcode.CodeInternalError
 	}
 }
-

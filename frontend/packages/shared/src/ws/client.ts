@@ -5,6 +5,7 @@ type MessageHandler = (msg: ServerMessage) => void;
 type StatusHandler = (status: ConnectionStatus) => void;
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+export type SendResult = { ok: boolean; seq: number };
 
 export class WsClient {
   private ws: WebSocket | null = null;
@@ -83,13 +84,14 @@ export class WsClient {
     this.ws = null;
   }
 
-  send(msg: Omit<ClientMessage, 'seq'>): number {
+  send(msg: Omit<ClientMessage, 'seq'>): SendResult {
     const seqNum = ++this.seq;
     const fullMsg: ClientMessage = { ...msg, seq: seqNum };
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(fullMsg));
+      return { ok: true, seq: seqNum };
     }
-    return seqNum;
+    return { ok: false, seq: seqNum };
   }
 
   on(type: string, handler: MessageHandler): () => void {

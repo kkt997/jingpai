@@ -26,10 +26,22 @@ export const useBidStore = create<BidState>((set, get) => ({
   placeBid: (ws, auctionId, amount) => {
     if (get().bidPending) return;
     set({ bidPending: true });
-    ws.send({
+    const result = ws.send({
       type: MSG_BID,
       payload: { auctionId, amount },
     });
+    if (!result.ok) {
+      const status = ws.getStatus();
+      set({
+        bidPending: false,
+        lastBidResult: {
+          accepted: false,
+          msg: status === 'reconnecting' || status === 'connecting'
+            ? '正在重连，请稍后再试'
+            : '连接已断开，请刷新后重试',
+        },
+      });
+    }
   },
 
   onBidResult: (data) =>
@@ -41,10 +53,14 @@ export const useBidStore = create<BidState>((set, get) => ({
     })),
 
   onRankingUpdate: (data) =>
-    set({
-      ranking: data.ranking || data.top10 || [],
-      myRank: data.myRank ?? null,
-      totalBidders: data.totalBidders ?? 0,
+    set((state) => {
+      const ranking = data.ranking || data.top10 || [];
+      const inferredRank = ranking.find((item: RankItem) => item.isMe)?.rank;
+      return {
+        ranking,
+        myRank: data.myRank ?? inferredRank ?? state.myRank,
+        totalBidders: data.totalBidders ?? state.totalBidders,
+      };
     }),
 
   reset: () =>

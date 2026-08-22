@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"jingpai/internal/pkg/errcode"
 )
 
 type Response struct {
@@ -25,21 +27,21 @@ func Fail(c *gin.Context, httpCode int, code int, msg string) {
 }
 
 func BadRequest(c *gin.Context, msg string) {
-	Fail(c, http.StatusBadRequest, 4000, msg)
+	Fail(c, http.StatusBadRequest, errcode.CodeBadRequest, msg)
 }
 
 func Unauthorized(c *gin.Context) {
-	Fail(c, http.StatusUnauthorized, 4011, "请先登录")
+	Fail(c, http.StatusUnauthorized, errcode.CodeUnauthorized, "请先登录")
 }
 
 func Forbidden(c *gin.Context, msg string) {
-	Fail(c, http.StatusForbidden, 4003, msg)
+	Fail(c, http.StatusForbidden, errcode.CodeForbidden, msg)
 }
 
 func NotFound(c *gin.Context, msg string) {
-	Fail(c, http.StatusNotFound, 4004, msg)
+	Fail(c, http.StatusNotFound, errcode.CodeNotFound, msg)
 }
 
 func ServerError(c *gin.Context, msg string) {
-	Fail(c, http.StatusInternalServerError, 5000, msg)
+	Fail(c, http.StatusInternalServerError, errcode.CodeInternalError, msg)
 }

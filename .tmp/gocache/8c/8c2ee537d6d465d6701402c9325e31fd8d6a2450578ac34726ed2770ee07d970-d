@@ -1,0 +1,8 @@
+./alias.go
+./auction_fsm.go
+./bid.go
+./broadcast.go
+./context.go
+./deposit.go
+./order.go
+./timer.go

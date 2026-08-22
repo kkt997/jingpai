@@ -7,6 +7,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+
+	"jingpai/internal/pkg/errcode"
 )
 
 const (
@@ -64,7 +66,7 @@ func (c *Client) ReadPump() {
 		if err := json.Unmarshal(message, &msg); err != nil {
 			c.SendMessage(ServerMessage{
 				Type: MsgError,
-				Code: 4010,
+				Code: errcode.CodeInvalidPayload,
 				Msg:  "invalid message format",
 				Ts:   time.Now().UnixMilli(),
 			})

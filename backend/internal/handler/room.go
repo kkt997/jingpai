@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"strconv"
 	"time"
 
@@ -106,10 +105,25 @@ func (h *Handler) EndRoom(c *gin.Context) {
 		return
 	}
 
+	var auctions []model.Auction
+	if err := h.db.Where("room_id = ? AND status IN ?", room.ID, []string{
+		string(model.StatusPending),
+		string(model.StatusActive),
+		string(model.StatusExtended),
+	}).Find(&auctions).Error; err != nil {
+		response.ServerError(c, "查询直播间竞拍失败")
+		return
+	}
+	for i := range auctions {
+		if err := h.auctionTimer.EndAuctionNow(c.Request.Context(), auctions[i].ID, "ROOM_END"); err != nil {
+			response.ServerError(c, "结束直播间竞拍失败")
+			return
+		}
+	}
+
 	now := time.Now()
 	room.Status = model.RoomEnded
 	room.EndedAt = &now
 	h.db.Save(&room)
-	go h.depositService.RefundByRoomEnd(context.Background(), room.ID)
 	response.OK(c, room)
 }

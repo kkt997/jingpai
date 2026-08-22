@@ -1,0 +1,12 @@
+./auction.go
+./bid.go
+./conversation.go
+./conversation_participant.go
+./deposit.go
+./follow.go
+./live_room.go
+./message.go
+./order.go
+./product.go
+./seed.go
+./user.go

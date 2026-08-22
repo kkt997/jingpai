@@ -48,12 +48,12 @@ export const useAuctionStore = create<AuctionState>((set) => ({
   refundHint: '',
 
   initFromRoomState: (data) =>
-    set({
+    set((state) => ({
       auction: data.auction,
       product: data.auction?.product,
       mode: data.auction?.mode || 'OPEN',
       status: data.auction?.status || 'PENDING',
-      currentPrice: data.auction?.currentPrice || 0,
+      currentPrice: data.auction?.currentPrice ?? state.currentPrice,
       bidCount: data.auction?.bidCount || 0,
       endTime: data.auction?.endTime || 0,
       depositRequired: data.auction?.depositRequired || false,
@@ -62,21 +62,53 @@ export const useAuctionStore = create<AuctionState>((set) => ({
       depositStatus: data.auction?.depositStatus || null,
       canRefund: data.auction?.canRefund || false,
       refundHint: data.auction?.refundHint || '',
-    }),
+    })),
 
   onNewBid: (data) =>
-    set({
-      currentPrice: data.currentPrice ?? data.amount,
-      bidCount: data.bidCount,
-    }),
+    set((state) => ({
+      currentPrice: data.currentPrice ?? data.amount ?? state.currentPrice,
+      bidCount: data.bidCount ?? state.bidCount,
+    })),
 
   onAuctionStart: (data) =>
-    set({
-      status: 'ACTIVE',
-      endTime: data.endTime,
-      currentPrice: data.startingPrice || 0,
-      depositRequired: data.depositRequired || false,
-      depositAmount: data.depositAmount || 0,
+    set((state) => {
+      const nextAuction = data.auction ?? {
+        id: data.auctionId ?? data.id,
+        productId: data.productId,
+        roomId: state.auction?.roomId,
+        merchantId: state.auction?.merchantId,
+        mode: data.mode || 'OPEN',
+        status: 'ACTIVE',
+        startingPrice: data.startingPrice || 0,
+        incrementAmount: data.incrementAmount || state.auction?.incrementAmount || 0,
+        ceilingPrice: data.ceilingPrice ?? state.auction?.ceilingPrice ?? null,
+        depositAmount: data.depositAmount || 0,
+        durationSeconds: data.durationSeconds || 0,
+        autoExtendSeconds: data.autoExtendSeconds || state.auction?.autoExtendSeconds || 0,
+        currentPrice: data.currentPrice ?? data.startingPrice ?? state.currentPrice,
+        winnerId: null,
+        bidCount: 0,
+        extendCount: 0,
+        scheduledEnd: null,
+        product: data.product ?? state.product,
+        room: state.auction?.room,
+      };
+      return {
+        auction: nextAuction,
+        product: nextAuction.product ?? data.product ?? state.product,
+        mode: nextAuction.mode || data.mode || 'OPEN',
+        status: 'ACTIVE',
+        endTime: data.endTime,
+        currentPrice: nextAuction.currentPrice ?? data.currentPrice ?? data.startingPrice ?? state.currentPrice,
+        bidCount: nextAuction.bidCount ?? 0,
+        extendCount: nextAuction.extendCount ?? 0,
+        depositRequired: data.depositRequired || false,
+        depositAmount: data.depositAmount || 0,
+        hasDeposit: data.hasDeposit ?? state.hasDeposit,
+        depositStatus: data.depositStatus ?? state.depositStatus,
+        canRefund: data.canRefund ?? state.canRefund,
+        refundHint: data.refundHint ?? state.refundHint,
+      };
     }),
 
   onAuctionExtend: (data) =>

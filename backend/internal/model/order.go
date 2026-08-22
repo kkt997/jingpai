@@ -19,7 +19,7 @@ const (
 type Order struct {
 	ID         uint            `gorm:"primaryKey" json:"id"`
 	OrderNo    string          `gorm:"type:varchar(32);uniqueIndex;not null" json:"orderNo"`
-	AuctionID  uint            `gorm:"not null;index" json:"auctionId"`
+	AuctionID  uint            `gorm:"not null;uniqueIndex:idx_orders_auction_id_unique" json:"auctionId"`
 	BuyerID    uint            `gorm:"not null;index" json:"buyerId"`
 	SellerID   uint            `gorm:"not null;index" json:"sellerId"`
 	ProductID  uint            `gorm:"not null" json:"productId"`

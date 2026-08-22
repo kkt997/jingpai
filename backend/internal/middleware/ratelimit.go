@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
+	"jingpai/internal/pkg/errcode"
 	"jingpai/internal/pkg/response"
 )
 
@@ -36,7 +37,7 @@ func (rl *RateLimiter) APIRateLimit(limit int64, window time.Duration) gin.Handl
 			rl.rdb.Expire(ctx, key, window)
 		}
 		if count > limit {
-			response.Fail(c, 429, 5001, "请求过于频繁，请稍后重试")
+			response.Fail(c, 429, errcode.CodeSystemBusy, "请求过于频繁，请稍后重试")
 			c.Abort()
 			return
 		}
@@ -60,7 +61,7 @@ func (rl *RateLimiter) RegisterRateLimit(maxAttempts int64, window time.Duration
 			rl.rdb.Expire(ctx, key, window)
 		}
 		if count > maxAttempts {
-			response.Fail(c, 429, 5001, "注册过于频繁，请稍后再试")
+			response.Fail(c, 429, errcode.CodeSystemBusy, "注册过于频繁，请稍后再试")
 			c.Abort()
 			return
 		}
@@ -84,7 +85,7 @@ func (rl *RateLimiter) BidRateLimit() gin.HandlerFunc {
 			return
 		}
 		if !ok {
-			response.Fail(c, 429, 4003, "出价太频繁，每秒仅可出价1次")
+			response.Fail(c, 429, errcode.CodeBidTooFrequent, "出价太频繁，每秒仅可出价1次")
 			c.Abort()
 			return
 		}

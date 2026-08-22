@@ -20,6 +20,7 @@ func (s *BroadcastService) BroadcastNewBid(
 	room *ws.Room,
 	mode model.AuctionMode,
 	merchantID uint,
+	bidderID uint,
 	bidderAlias string,
 	amount float64,
 	currentPrice float64,
@@ -32,14 +33,8 @@ func (s *BroadcastService) BroadcastNewBid(
 		room.Broadcast(ws.ServerMessage{
 			Type: ws.MsgNewBid,
 			Code: 0,
-			Data: map[string]any{
-				"alias":        bidderAlias,
-				"amount":       amount,
-				"currentPrice": currentPrice,
-				"bidCount":     bidCount,
-				"ranking":      filterRankingOpen(ranking),
-			},
-			Ts: now,
+			Data: BuildNewBidView(mode, merchantID, bidderID, 0, bidderAlias, amount, currentPrice, bidCount, ranking),
+			Ts:   now,
 		})
 		return
 	}
@@ -47,18 +42,11 @@ func (s *BroadcastService) BroadcastNewBid(
 	// Blind mode: each user sees personalized data
 	room.BroadcastFiltered(func(viewerUserID uint) ws.ServerMessage {
 		viewerID := viewerUserID
-		isMerchant := viewerID == merchantID
 		return ws.ServerMessage{
 			Type: ws.MsgNewBid,
 			Code: 0,
-			Data: map[string]any{
-				"alias":        bidderAlias,
-				"amount":       amount,
-				"currentPrice": currentPrice,
-				"bidCount":     bidCount,
-				"ranking":      filterRankingBlind(ranking, viewerID, isMerchant),
-			},
-			Ts: now,
+			Data: BuildNewBidView(mode, merchantID, bidderID, viewerID, bidderAlias, amount, currentPrice, bidCount, ranking),
+			Ts:   now,
 		}
 	})
 }
@@ -92,37 +80,4 @@ func (s *BroadcastService) BroadcastAuctionEnd(room *ws.Room, result string, win
 		},
 		Ts: time.Now().UnixMilli(),
 	})
-}
-
-func filterRankingOpen(ranking []RankItem) []RankItemDTO {
-	result := make([]RankItemDTO, len(ranking))
-	for i, item := range ranking {
-		amount := item.Amount
-		result[i] = RankItemDTO{
-			Rank:   item.Rank,
-			UserID: item.UserID,
-			Alias:  item.Alias,
-			Amount: &amount,
-			IsMe:   item.IsMe,
-		}
-	}
-	return result
-}
-
-func filterRankingBlind(ranking []RankItem, viewerUserID uint, revealAmounts bool) []RankItemDTO {
-	result := make([]RankItemDTO, len(ranking))
-	for i, item := range ranking {
-		dto := RankItemDTO{
-			Rank:   item.Rank,
-			UserID: item.UserID,
-			Alias:  item.Alias,
-			IsMe:   item.UserID == viewerUserID,
-		}
-		if revealAmounts || item.UserID == viewerUserID {
-			amount := item.Amount
-			dto.Amount = &amount
-		}
-		result[i] = dto
-	}
-	return result
 }
